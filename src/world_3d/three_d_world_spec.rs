@@ -1,4 +1,5 @@
 use anyhow::Result;
+use super::ThreeDField;
 
 pub struct SingleDimSpec {
     n: usize,
@@ -27,12 +28,19 @@ pub struct ThreeDWorldSpec {
     x_dim: SingleDimSpec,
     y_dim: SingleDimSpec,
     z_dim: SingleDimSpec,
+    phi: ThreeDField,
+    rho: ThreeDField,
+    ef: ThreeDField,
 }
 
 impl ThreeDWorldSpec {
     
     pub fn init(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec) -> Result<Self> {
-        let spec = Self{x_dim:x_dim, y_dim:y_dim, z_dim:z_dim};
+        let phi = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
+        let rho = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
+        let ef = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
+        let spec = Self{x_dim:x_dim, y_dim:y_dim, z_dim:z_dim,
+                        phi:phi, rho:rho, ef:ef};
         Ok(spec)
     }
 
