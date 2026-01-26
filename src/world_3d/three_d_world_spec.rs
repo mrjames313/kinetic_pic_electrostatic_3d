@@ -1,5 +1,8 @@
 use anyhow::Result;
 use glam::DVec3;  // might consider using ndarray in the future
+use std::path::Path;
+use vtkio::model::{Attribute, Attributes, ByteOrder, DataSet, Extent,
+                   ImageDataPiece, Piece, Version, Vtk};
 
 // internal 
 use super::ThreeDField;
@@ -137,6 +140,56 @@ impl ThreeDWorldSpec {
                 Err(format!("GS SOR didn't converge.  L2 residual {l2:.6}"))
             }
         }
+    }
+
+    fn flatten_dvec3(vs: &[DVec3]) -> Vec<f64> {
+        let mut out = Vec::with_capacity(3 * vs.len());
+        for v in vs {
+            out.push(v.x);
+            out.push(v.y);
+            out.push(v.z);
+        }
+        out
+    }
+    
+    pub fn write_world_vti(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
+//        ef_xyz: &[f64], // flattened as [ex0,ey0,ez0, ex1,ey1,ez1, ...]
+        let npts = self.x_dim.n * self.y_dim.n * self.z_dim.n;
+        anyhow::ensure!(self.phi.len() == npts, "phi wrong length");
+        anyhow::ensure!(self.rho.len() == npts, "rho wrong length");
+        anyhow::ensure!(self.ef.len() == npts, "ef_xyz wrong length (need 3*npts)"); // this might not work 
+
+        // Attach arrays as POINT_DATA (common for potentials/fields sampled at grid points).
+        let mut attrs = Attributes::new();
+        attrs.point.push(Attribute::scalars("phi", 1).with_data(self.phi.data().to_vec() ));
+        attrs.point.push(Attribute::scalars("rho", 1).with_data(self.rho.data().to_vec() ));
+        let ef_flat = Self::flatten_dvec3(self.ef.data());
+        attrs.point.push(Attribute::vectors("ef").with_data(ef_flat));
+
+        // ImageData uses an extent + origin + spacing. Extent::Dims is the legacy “dims” form. :contentReference[oaicite:5]{index=5}
+        let extent = Extent::Dims([self.x_dim.n as u32, self.y_dim.n as u32, self.z_dim.n as u32]);
+
+        let piece = ImageDataPiece {
+            extent: extent.clone(),
+            data: attrs,
+        };
+
+        let vtk = Vtk {
+            version: Version::new((4, 1)),
+            byte_order: ByteOrder::LittleEndian,
+            title: "ThreeDWorldSpec snapshot".to_string(),
+            file_path: None,
+            data: DataSet::ImageData {
+                extent,
+                origin: [self.x_dim.min as f32, self.y_dim.min as f32, self.z_dim.min as f32],
+                spacing: [self.x_dim.delta as f32, self.y_dim.delta as f32, self.z_dim.delta as f32],
+                meta: None,
+                pieces: vec![Piece::Inline(Box::new(piece))],
+            },
+        };
+
+        vtk.export(path)?;
+        Ok(())
     }
 
     //pub fn compute_ef() -> Result<()> {

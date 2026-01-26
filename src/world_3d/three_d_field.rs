@@ -33,6 +33,10 @@ impl<T> ThreeDField <T>
         self.data[idx] = val;
     }
 
+    pub fn len(&self) -> usize { self.data.len() }
+
+    pub fn data(&self) -> &[T] { &self.data }
+    
     pub fn elementwise_inplace_add(&mut self, other: &ThreeDField<T>) {
         for (x,y) in self.data.iter_mut().zip(&other.data) {
             *x += *y;

@@ -47,5 +47,8 @@ fn main() -> Result <()> {
     world.solve_potential_gs_sor(5000);
     
     world.print()?;
+
+    world.write_world_vti("images/world_fields.vti");
+    
     Ok(())
 }
