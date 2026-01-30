@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::PathBuf;
 
 use kinetic_pic_electrostatic_3d::world_3d::{ThreeDWorldSpec, SingleDimSpec};
 
@@ -45,10 +46,13 @@ fn main() -> Result <()> {
     set_phi_to_test_values(&mut world);
 
     world.solve_potential_gs_sor(5000);
+    world.compute_ef();
     
     world.print()?;
 
-    world.write_world_vti("images/world_fields.vti");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = root.join("images").join("world_fields.vti");
+    world.write_world_vti(out_dir)?;
     
     Ok(())
 }

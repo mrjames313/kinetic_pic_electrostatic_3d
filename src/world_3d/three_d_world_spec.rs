@@ -142,6 +142,75 @@ impl ThreeDWorldSpec {
         }
     }
 
+    pub fn compute_ef(&mut self) -> Result<(), String> {
+        let two_dx : f64 = 2.0 * self.x_dim.delta;
+        let two_dy : f64 = 2.0 * self.y_dim.delta;
+        let two_dz : f64 = 2.0 * self.z_dim.delta;
+
+        let mut ef: DVec3 = [0.0, 0.0, 0.0].into();
+        
+        for i in 0..self.x_dim.n {
+            for j in 0..self.y_dim.n {
+                for k in 0..self.z_dim.n {
+                    // In each inner loop iteration, set each component of ef, then
+                    // at the end, assign it to self.ef[i,j,k]
+                    if i == 0 {
+                        ef[0] = - (-3.0 * self.phi.get(i,j,k)
+                                   + 4.0 * self.phi.get(i+1, j, k)
+                                   - self.phi.get(i+2, j, k))
+                            / two_dx;
+                    } else if i == self.x_dim.n - 1 {
+                        ef[0] = - (3.0 * self.phi.get(i,j,k)
+                                   - 4.0 * self.phi.get(i-1, j, k)
+                                   + self.phi.get(i-2, j, k))
+                            / two_dx;
+                    } else {
+                        ef[0] = -(self.phi.get(i+1,j,k) - self.phi.get(i-1,j,k))
+                            / two_dx;
+                    }
+                    
+                    if j == 0 {
+                        ef[1] = - (-3.0 * self.phi.get(i,j,k)
+                                   + 4.0 * self.phi.get(i, j+1, k)
+                                   - self.phi.get(i, j+2, k))
+                            / two_dy;
+                    } else if j == self.y_dim.n - 1 {
+                        ef[1] = - (3.0 * self.phi.get(i,j,k)
+                                   - 4.0 * self.phi.get(i, j-1, k)
+                                   + self.phi.get(i, j-2, k))
+                            / two_dy;
+                    } else {
+                        ef[1] = -(self.phi.get(i,j+1,k) - self.phi.get(i,j-1,k))
+                            / two_dy;
+                    }
+
+                    if k == 0 {
+                        ef[2] = - (-3.0 * self.phi.get(i,j,k)
+                                   + 4.0 * self.phi.get(i, j, k+1)
+                                   - self.phi.get(i, j, k+2))
+                            / two_dz;
+                    } else if k == self.z_dim.n - 1 {
+                        ef[2] = - (3.0 * self.phi.get(i,j,k)
+                                   - 4.0 * self.phi.get(i, j, k-1)
+                                   + self.phi.get(i, j, k-2))
+                            / two_dz;
+                    } else {
+                        ef[2] = -(self.phi.get(i,j,k+1) - self.phi.get(i,j,k-1))
+                            / two_dz;
+                    }
+
+                    self.ef.set(i,j,k, ef);
+                    if i==5 && j==6 {
+                        println!("Ef at {i}, {j}, {k} is {ef}");
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    
     fn flatten_dvec3(vs: &[DVec3]) -> Vec<f64> {
         let mut out = Vec::with_capacity(3 * vs.len());
         for v in vs {
@@ -167,7 +236,8 @@ impl ThreeDWorldSpec {
         attrs.point.push(Attribute::vectors("ef").with_data(ef_flat));
 
         // ImageData uses an extent + origin + spacing. Extent::Dims is the legacy “dims” form. :contentReference[oaicite:5]{index=5}
-        let extent = Extent::Dims([self.x_dim.n as u32, self.y_dim.n as u32, self.z_dim.n as u32]);
+        // ImageData uses inclusive ranges, so 0..20 includes 21 points.
+        let extent = Extent::Ranges([0..=((self.x_dim.n as i32) - 1), 0..=((self.y_dim.n as i32) - 1), 0..=((self.z_dim.n as i32) - 1) ]);
 
         let piece = ImageDataPiece {
             extent: extent.clone(),
@@ -175,7 +245,7 @@ impl ThreeDWorldSpec {
         };
 
         let vtk = Vtk {
-            version: Version::new((4, 1)),
+            version: Version::new((2, 3)),
             byte_order: ByteOrder::LittleEndian,
             title: "ThreeDWorldSpec snapshot".to_string(),
             file_path: None,
