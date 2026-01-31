@@ -8,14 +8,14 @@ use vtkio::model::{Attribute, Attributes, ByteOrder, DataSet, Extent,
 use super::ThreeDField;
 use crate::constants::*;
 
-
+#[derive(Copy, Clone, Debug)]
 pub struct SingleDimSpec {
-    n: usize,
-    min: f64,
-    max: f64,
+    pub n: usize,
+    pub min: f64,
+    pub max: f64,
     // computed fields
-    delta: f64,
-    center: f64,
+    pub delta: f64,
+    pub center: f64,
 }
 
 impl SingleDimSpec {

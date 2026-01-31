@@ -1,7 +1,9 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
+use kinetic_pic_electrostatic_3d::constants::*;
 use kinetic_pic_electrostatic_3d::world_3d::{ThreeDWorldSpec, SingleDimSpec};
+use kinetic_pic_electrostatic_3d::particles::Species;
 
 
 fn set_phi_to_test_values(world : &mut ThreeDWorldSpec) {
@@ -53,6 +55,10 @@ fn main() -> Result <()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let out_dir = root.join("images").join("world_fields.vti");
     world.write_world_vti(out_dir)?;
+
+    // now introduce particles to the system
+    let ions = Species::init("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim);
+    let electrons = Species::init("e".to_string(), ME, -1.0 * QE, x_dim, y_dim, z_dim);
     
     Ok(())
 }
