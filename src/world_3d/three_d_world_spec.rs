@@ -64,6 +64,20 @@ impl ThreeDWorldSpec {
         self.z_dim.n
     }
 
+    // some helper functions for key locations in the world
+    pub fn get_min_corner(&self) -> DVec3 {
+        DVec3::new(self.x_dim.min, self.y_dim.min, self.z_dim.min)
+    }
+
+    pub fn get_center(&self) -> DVec3 {
+        DVec3::new(self.x_dim.center, self.y_dim.center, self.z_dim.center)
+    }
+
+    pub fn get_max_corner(&self) -> DVec3 {
+        DVec3::new(self.x_dim.max, self.y_dim.max, self.z_dim.max)
+    }
+
+
     pub fn set_phi(&mut self, i: usize, j: usize, k: usize, val: f64) {
         self.phi.set(i,j,k,val);
     }

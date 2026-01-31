@@ -57,8 +57,34 @@ fn main() -> Result <()> {
     world.write_world_vti(out_dir)?;
 
     // now introduce particles to the system
-    let ions = Species::init("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim);
-    let electrons = Species::init("e".to_string(), ME, -1.0 * QE, x_dim, y_dim, z_dim);
+    let mut ions = match Species::init("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("Failed to create ions species");
+            return Err(anyhow::anyhow!("Bad ions species spec"));
+        }
+    };
+    
+    let mut electrons = match Species::init("e".to_string(), ME, -1.0 * QE, x_dim, y_dim, z_dim) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("Failed to create electrons species");
+            return Err(anyhow::anyhow!("Bad electrons species spec"));
+        }
+    };
+
+
+    let np_ions: usize = 80_000;
+    let np_electrons: usize = 10_000;
+    let num_den: f64 = 1.0e11;
+
+    ions.load_particles_box(world.get_min_corner(), world.get_max_corner(),
+                            num_den, np_ions);
+    electrons.load_particles_box(world.get_min_corner(), world.get_center(),
+                                 num_den, np_electrons);
+
+    println!("Now have {} ions, and {} electrons loaded",
+             ions.get_num_particles(), electrons.get_num_particles());
     
     Ok(())
 }
