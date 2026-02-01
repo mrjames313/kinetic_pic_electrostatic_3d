@@ -4,7 +4,7 @@ use rand::Rng;
 
 use crate::world_3d::ThreeDField;
 use crate::world_3d::SingleDimSpec;
-
+use crate::world_3d::ThreeDWorldSpec;
 
 pub struct Particle {
     pos: DVec3,
@@ -16,8 +16,8 @@ pub struct Particle {
 pub struct Species {
     name: String,  // Look into OnceCell<String> to enforce types
     mass: f64,
-    charge: f64,
-    number_density: ThreeDField<f64>,
+    pub charge: f64,
+    pub number_density: ThreeDField<f64>,
     particles: Vec<Particle>,
 }
 
@@ -67,9 +67,15 @@ impl Species {
         }
         Ok(())
     }
-}
-    
-                    
-    
-    
 
+    // TODO: Consider if passing world in here is the best design
+    pub fn compute_number_density(&mut self, world : &ThreeDWorldSpec) {
+        self.number_density.set_all(0.0);
+        for particle in self.particles.iter() {
+            let full_idx : DVec3 = world.get_full_node_index(particle.pos);
+            self.number_density.distribute(full_idx, particle.macroparticle_weight);
+        }
+        // TODO: think about whether divide is the right operation here
+        self.number_density.elementwise_inplace_div(&world.node_volume);
+    }
+}

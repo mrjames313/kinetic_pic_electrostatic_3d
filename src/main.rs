@@ -6,6 +6,8 @@ use kinetic_pic_electrostatic_3d::world_3d::{ThreeDWorldSpec, SingleDimSpec};
 use kinetic_pic_electrostatic_3d::particles::Species;
 
 
+// sets up phi for two of the cube sides to non-zero.  Remaining four
+// sides are zero
 fn set_phi_to_test_values(world : &mut ThreeDWorldSpec) {
     for j in 0..world.get_y_dim_n() {
         for k in 0..world.get_z_dim_n() {
@@ -52,9 +54,9 @@ fn main() -> Result <()> {
     
     world.print()?;
 
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = root.join("images").join("world_fields.vti");
-    world.write_world_vti(out_dir)?;
+//    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+//    let out_dir = root.join("images").join("world_fields.vti");
+//    world.write_world_vti(out_dir)?;
 
     // now introduce particles to the system
     let mut ions = match Species::init("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim) {
@@ -85,6 +87,19 @@ fn main() -> Result <()> {
 
     println!("Now have {} ions, and {} electrons loaded",
              ions.get_num_particles(), electrons.get_num_particles());
+
+    let mut all_species : Vec<Species> = [ions, electrons].into(); // maybe?
+
+    // now compute the fields with these particles in place
+    for s in all_species.iter_mut() {
+        s.compute_number_density(&world);
+    }
     
+    world.compute_rho(&mut all_species);
+    
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = root.join("images").join("world_fields.vti");
+    world.write_world_vti(out_dir)?;
+   
     Ok(())
 }
