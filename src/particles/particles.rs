@@ -14,7 +14,7 @@ pub struct Particle {
 
 
 pub struct Species {
-    name: String,  // Look into OnceCell<String> to enforce types
+    pub name: String,  // Look into OnceCell<String> to enforce types
     mass: f64,
     pub charge: f64,
     pub number_density: ThreeDField<f64>,
@@ -60,8 +60,8 @@ impl Species {
         let mut pos: DVec3 = [0.0, 0.0, 0.0].into();
         for i in 0..num_sim_particles {
             pos.x = corner_min.x + rng.gen_range(0.0 .. 1.0) * x_extent;
-            pos.x = corner_min.y + rng.gen_range(0.0 .. 1.0) * y_extent;
-            pos.x = corner_min.z + rng.gen_range(0.0 .. 1.0) * z_extent;
+            pos.y = corner_min.y + rng.gen_range(0.0 .. 1.0) * y_extent;
+            pos.z = corner_min.z + rng.gen_range(0.0 .. 1.0) * z_extent;
             self.particles.push(Particle{pos:pos, vel:[0.0, 0.0, 0.0].into(),
                                          macroparticle_weight:macroparticle_weight});
         }
@@ -71,8 +71,20 @@ impl Species {
     // TODO: Consider if passing world in here is the best design
     pub fn compute_number_density(&mut self, world : &ThreeDWorldSpec) {
         self.number_density.set_all(0.0);
+        let mut rng = rand::thread_rng();
+        
+        println!("Computing desity for {} particles", self.particles.len());
         for particle in self.particles.iter() {
+            if rng.gen_range(0.0 .. 1.0) < 0.001 {
+                println!("Particle at pos [{}, {}, {}] with weight {}", particle.pos[0],
+                         particle.pos[1], particle.pos[2], particle.macroparticle_weight);
+            }
+            
             let full_idx : DVec3 = world.get_full_node_index(particle.pos);
+            if (full_idx[0] as usize == 5 && full_idx[1] as usize == 5 && full_idx[2] as usize == 5) {
+                println!("At 5,5,5, distributing weight {}", particle.macroparticle_weight);
+            }
+            
             self.number_density.distribute(full_idx, particle.macroparticle_weight);
         }
         // TODO: think about whether divide is the right operation here

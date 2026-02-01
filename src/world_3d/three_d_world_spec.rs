@@ -127,8 +127,32 @@ impl ThreeDWorldSpec {
     // Requires that these fields are the same dim, etc
     pub fn compute_rho(&mut self, species : &Vec<Species>) {
         self.rho.set_all(0.0);
+        // debugging indices
+        let debug_indices: Vec<[usize; 3]> = [[5,5,5], [5,5,15], [5,15,5], [5,15,15],
+                                              [15,5,5], [15,5,15], [15,15,5], [15,15,15]].into();
+        // debug code
+        for arr in debug_indices.iter() {
+            println!("At index [{}, {}, {}] have value {}", arr[0], arr[1], arr[2],
+                     self.rho.get(arr[0], arr[1], arr[2]));
+        }
+        
+
         for s in species.iter() {
+            println!("New species {}, charge {}", s.name, s.charge);
+            
             self.rho.elementwise_inplace_add_scaled(s.charge, &s.number_density);
+            // debug code
+            for arr in debug_indices.iter() {
+                println!("At index [{}, {}, {}] have node volumt {}", arr[0], arr[1], arr[2],
+                         self.node_volume.get(arr[0], arr[1], arr[2]));
+
+                println!("At index [{}, {}, {}] have number_density {}", arr[0], arr[1], arr[2],
+                         s.number_density.get(arr[0], arr[1], arr[2]));
+
+                println!("At index [{}, {}, {}] have rho {}", arr[0], arr[1], arr[2],
+                         self.rho.get(arr[0], arr[1], arr[2]));
+            }
+
         }
     }
     
