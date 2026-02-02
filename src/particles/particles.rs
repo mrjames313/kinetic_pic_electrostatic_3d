@@ -2,6 +2,9 @@ use anyhow::Result;
 use glam::DVec3;
 use rand::Rng;
 
+// temp
+use std::collections::HashMap;
+
 use crate::world_3d::ThreeDField;
 use crate::world_3d::SingleDimSpec;
 use crate::world_3d::ThreeDWorldSpec;
@@ -46,9 +49,13 @@ impl Species {
         anyhow::ensure!(corner_min.z < corner_max.z,
                         "z dim of corner_max must be greater than corner_min)");
 
+        println!("Loading box with corners [{}, {}, {}] to [{}, {}, {}]",
+                 corner_min.x, corner_min.y, corner_min.z,
+                 corner_max.x, corner_max.y, corner_max.z);
+        
         let x_extent = corner_max.x - corner_min.x;
-        let y_extent = corner_max.y - corner_min.z;
-        let z_extent = corner_max.y - corner_min.z;
+        let y_extent = corner_max.y - corner_min.y;
+        let z_extent = corner_max.z - corner_min.z;
         
         let box_vol = x_extent * y_extent * z_extent;
         let num_actual_particles = number_density * box_vol; // leave it as f64
@@ -72,15 +79,23 @@ impl Species {
     pub fn compute_number_density(&mut self, world : &ThreeDWorldSpec) {
         self.number_density.set_all(0.0);
         let mut rng = rand::thread_rng();
+
+        // debugging
+        let mut counts: HashMap<[usize; 3], usize> = HashMap::new();
         
         println!("Computing desity for {} particles", self.particles.len());
         for particle in self.particles.iter() {
-            if rng.gen_range(0.0 .. 1.0) < 0.001 {
-                println!("Particle at pos [{}, {}, {}] with weight {}", particle.pos[0],
-                         particle.pos[1], particle.pos[2], particle.macroparticle_weight);
-            }
+//            if rng.gen_range(0.0 .. 1.0) < 0.001 {
+//                println!("Particle at pos [{}, {}, {}] with weight {}", particle.pos[0],
+//                         particle.pos[1], particle.pos[2], particle.macroparticle_weight);
+//            }
             
             let full_idx : DVec3 = world.get_full_node_index(particle.pos);
+
+            // debug
+            let key = [full_idx[0] as usize, full_idx[1] as usize, full_idx[2] as usize];
+            *counts.entry(key).or_insert(0) += 1;
+            
             if (full_idx[0] as usize == 5 && full_idx[1] as usize == 5 && full_idx[2] as usize == 5) {
                 println!("At 5,5,5, distributing weight {}", particle.macroparticle_weight);
             }
@@ -89,5 +104,11 @@ impl Species {
         }
         // TODO: think about whether divide is the right operation here
         self.number_density.elementwise_inplace_div(&world.node_volume);
+
+        // get some stats
+        let min = counts.values().min().copied().unwrap();
+        let max = counts.values().max().copied().unwrap();
+//        let sum = counts.values().sum().copied();
+        println!("Stats of box counts: min {}, max {}", min, max);
     }
 }

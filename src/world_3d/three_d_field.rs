@@ -39,6 +39,11 @@ impl<T> ThreeDField <T>
         self.data[idx] = val;
     }
 
+    pub fn add(&mut self, ix: usize, iy: usize, iz: usize, val: T) {
+        let idx = self.idx(ix, iy, iz);
+        self.data[idx] += val;
+    }
+
     // Like set, but distributes to neighboring nodes according to
     // volumetric proportion
     // full_idx has both the integer and fractional components
@@ -52,14 +57,14 @@ impl<T> ThreeDField <T>
         let iz = full_idx[2] as usize;
         let fiz = full_idx[2] - (iz as f64);
 
-        self.set(ix,   iy,   iz,   value * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz));
-        self.set(ix,   iy,   iz+1, value * (1.0 - fix) * (1.0 - fiy) * (fiz));
-        self.set(ix,   iy+1, iz,   value * (1.0 - fix) * (fiy) *       (1.0 - fiz));
-        self.set(ix,   iy+1, iz+1, value * (1.0 - fix) * (fiy) *       (fiz));
-        self.set(ix+1, iy,   iz,   value * (fix) *       (1.0 - fiy) * (1.0 - fiz));
-        self.set(ix+1, iy,   iz+1, value * (fix) *       (1.0 - fiy) * (fiz));
-        self.set(ix+1, iy+1, iz,   value * (fix) *       (fiy) *       (1.0 - fiz));
-        self.set(ix+1, iy+1, iz+1, value * (fix) *       (fiy) *       (fiz));
+        self.add(ix,   iy,   iz,   value * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz));
+        self.add(ix,   iy,   iz+1, value * (1.0 - fix) * (1.0 - fiy) * (fiz));
+        self.add(ix,   iy+1, iz,   value * (1.0 - fix) * (fiy) *       (1.0 - fiz));
+        self.add(ix,   iy+1, iz+1, value * (1.0 - fix) * (fiy) *       (fiz));
+        self.add(ix+1, iy,   iz,   value * (fix) *       (1.0 - fiy) * (1.0 - fiz));
+        self.add(ix+1, iy,   iz+1, value * (fix) *       (1.0 - fiy) * (fiz));
+        self.add(ix+1, iy+1, iz,   value * (fix) *       (fiy) *       (1.0 - fiz));
+        self.add(ix+1, iy+1, iz+1, value * (fix) *       (fiy) *       (fiz));
     }
     
     pub fn len(&self) -> usize { self.data.len() }

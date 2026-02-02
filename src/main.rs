@@ -47,6 +47,13 @@ fn main() -> Result <()> {
         }
     };
 
+    x_dim.print();
+    y_dim.print();
+    z_dim.print();
+
+    println!("World");
+    world.print_spec();
+    
     set_phi_to_test_values(&mut world);
 
     world.solve_potential_gs_sor(5000);

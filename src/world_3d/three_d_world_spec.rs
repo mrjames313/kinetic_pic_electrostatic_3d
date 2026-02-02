@@ -23,12 +23,13 @@ impl SingleDimSpec {
     pub fn init(n: usize, min: f64, max: f64) -> Result<Self> {
         let spec = Self{n:n, min:min, max:max,
                             delta:(max - min)/(n-1) as f64,
-                            center:(max - min) / 2.0 };
+                            center:(max + min) / 2.0 };
         Ok(spec)
     }
 
     pub fn print(&self) -> Result <()> {
-        println!("Extent: [{:.4}, {:.4}], {} cells", self.min, self.max, self.n-1);
+        println!("Extent: [{:.4}, {:.4}], {} cells, delta {}, center{}", self.min,
+                 self.max, self.n-1, self.delta, self.center);
         Ok(())
     }
 }
@@ -53,6 +54,13 @@ pub struct ThreeDWorldSpec {
 }
 
 impl ThreeDWorldSpec {
+
+    pub fn print_spec(&self) {
+        self.x_dim.print();
+        self.y_dim.print();
+        self.z_dim.print();
+    }
+
     
     pub fn init(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec) -> Result<Self> {
         let phi = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
@@ -143,7 +151,7 @@ impl ThreeDWorldSpec {
             self.rho.elementwise_inplace_add_scaled(s.charge, &s.number_density);
             // debug code
             for arr in debug_indices.iter() {
-                println!("At index [{}, {}, {}] have node volumt {}", arr[0], arr[1], arr[2],
+                println!("At index [{}, {}, {}] have node volume {}", arr[0], arr[1], arr[2],
                          self.node_volume.get(arr[0], arr[1], arr[2]));
 
                 println!("At index [{}, {}, {}] have number_density {}", arr[0], arr[1], arr[2],
