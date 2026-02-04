@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+csv = "1"
 glam = "0.29"
-vtkio = "0.6.3"
 rand = "0.8"
+serde = {version = "1", features = ["derive"] }
+vtkio = "0.6.3"

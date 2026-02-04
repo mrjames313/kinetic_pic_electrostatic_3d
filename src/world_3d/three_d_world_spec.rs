@@ -9,6 +9,7 @@ use super::ThreeDField;
 use crate::constants::*;
 use crate::particles::Species;
 
+// TODO: refine this, probably have a read-only public interface to all 3 specs
 #[derive(Copy, Clone, Debug)]
 pub struct SingleDimSpec {
     pub n: usize,
@@ -34,14 +35,18 @@ impl SingleDimSpec {
     }
 }
 
+// TODO: priority!  Refactor this - the spec should be open to read-only anywhere
+// including the SingleDimSpecs, node_volume, and time vars.  Use read-only refs
+
+// Then make a new struct World, that holds the fields ef, phi, rho
 pub struct ThreeDWorldSpec {
     // Maybe there should be a part of this spec that is open / accessible - basically
     // corresponding to the grid itself and basic properties of it.  Wrap that up in a
     // struct?
     
-    x_dim: SingleDimSpec,
-    y_dim: SingleDimSpec,
-    z_dim: SingleDimSpec,
+    pub x_dim: SingleDimSpec,
+    pub y_dim: SingleDimSpec,
+    pub z_dim: SingleDimSpec,
     // TODO: this indicates bad design to me - need to think about ownership and access
     // between world and species
     pub node_volume: ThreeDField<f64>,
@@ -51,6 +56,9 @@ pub struct ThreeDWorldSpec {
     rho: ThreeDField<f64>,
     ef: ThreeDField<DVec3>,
 
+    // Time params
+    dt : f64,
+    time : f64,
 }
 
 impl ThreeDWorldSpec {
@@ -62,14 +70,15 @@ impl ThreeDWorldSpec {
     }
 
     
-    pub fn init(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec) -> Result<Self> {
+    pub fn init(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec, dt: f64) -> Result<Self> {
         let phi = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
         let rho = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
         let ef = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, DVec3::new(0.0, 0.0, 0.0));
         let node_volume = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
         
         let mut spec = Self{x_dim:x_dim, y_dim:y_dim, z_dim:z_dim,
-                            phi:phi, rho:rho, ef:ef, node_volume};
+                            phi:phi, rho:rho, ef:ef, node_volume:node_volume,
+                            dt:dt, time:0.0};
         spec.set_node_volumes();
         
         Ok(spec)
@@ -87,6 +96,22 @@ impl ThreeDWorldSpec {
         self.z_dim.n
     }
 
+    pub fn get_dt(&self) -> f64 {
+        self.dt
+    }
+
+    pub fn set_time(&mut self, time : f64) {
+        self.time = time;
+    }
+
+    pub fn get_time(&self) -> f64 {
+        self.time
+    }
+
+    pub fn advance_time(&mut self) {
+        self.time += self.dt;
+    }
+    
     // some helper functions for key locations in the world
     pub fn get_min_corner(&self) -> DVec3 {
         DVec3::new(self.x_dim.min, self.y_dim.min, self.z_dim.min)
@@ -100,15 +125,28 @@ impl ThreeDWorldSpec {
         DVec3::new(self.x_dim.max, self.y_dim.max, self.z_dim.max)
     }
 
-    // should add bounds checking?  Otherwise could get negative or out-of-bounds
+    // TODO: determine if this assert is too expensive, maybe make debug-only? debug_assert!
     pub fn get_full_node_index(&self, real_coord : DVec3) -> DVec3 {
+        assert!(real_coord[0] >= self.x_dim.min && real_coord[0] <= self.x_dim.max &&
+               real_coord[1] >= self.y_dim.min && real_coord[1] <= self.y_dim.max &&
+               real_coord[2] >= self.z_dim.min && real_coord[2] <= self.z_dim.max,
+               "One of the node coordinates {real_coord} is out of bounds");
+        
         let mut index : DVec3 = [0.0, 0.0, 0.0].into();
         index[0] = (real_coord[0] - self.x_dim.min) / self.x_dim.delta;
         index[1] = (real_coord[1] - self.y_dim.min) / self.y_dim.delta;
         index[2] = (real_coord[2] - self.z_dim.min) / self.z_dim.delta;
         index
     }
-    
+
+    pub fn get_full_node_index_no_assert(&self, real_coord : DVec3) -> DVec3 {
+        let mut index : DVec3 = [0.0, 0.0, 0.0].into();
+        index[0] = (real_coord[0] - self.x_dim.min) / self.x_dim.delta;
+        index[1] = (real_coord[1] - self.y_dim.min) / self.y_dim.delta;
+        index[2] = (real_coord[2] - self.z_dim.min) / self.z_dim.delta;
+        index
+    }
+
     // Could probably optimize this by precomputing powers and matching on count, but
     // only called at startup, so maybe not worth it.
     fn set_node_volumes(&mut self) {
@@ -135,37 +173,42 @@ impl ThreeDWorldSpec {
     // Requires that these fields are the same dim, etc
     pub fn compute_rho(&mut self, species : &Vec<Species>) {
         self.rho.set_all(0.0);
-        // debugging indices
-        let debug_indices: Vec<[usize; 3]> = [[5,5,5], [5,5,15], [5,15,5], [5,15,15],
-                                              [15,5,5], [15,5,15], [15,15,5], [15,15,15]].into();
-        // debug code
-        for arr in debug_indices.iter() {
-            println!("At index [{}, {}, {}] have value {}", arr[0], arr[1], arr[2],
-                     self.rho.get(arr[0], arr[1], arr[2]));
-        }
+//        // debugging indices
+//        let debug_indices: Vec<[usize; 3]> = [[5,5,5], [5,5,15], [5,15,5], [5,15,15],
+//                                              [15,5,5], [15,5,15], [15,15,5], [15,15,15]].into();
+//        // debug code
+//        // TODO: figure out if we need to put testing around this
+//        for arr in debug_indices.iter() {
+//            println!("At index [{}, {}, {}] have value {}", arr[0], arr[1], arr[2],
+//                     self.rho.get(arr[0], arr[1], arr[2]));
+//        }
         
 
         for s in species.iter() {
-            println!("New species {}, charge {}", s.name, s.charge);
+//            println!("New species {}, charge {}", s.name, s.charge);
             
             self.rho.elementwise_inplace_add_scaled(s.charge, &s.number_density);
-            // debug code
-            for arr in debug_indices.iter() {
-                println!("At index [{}, {}, {}] have node volume {}", arr[0], arr[1], arr[2],
-                         self.node_volume.get(arr[0], arr[1], arr[2]));
-
-                println!("At index [{}, {}, {}] have number_density {}", arr[0], arr[1], arr[2],
-                         s.number_density.get(arr[0], arr[1], arr[2]));
-
-                println!("At index [{}, {}, {}] have rho {}", arr[0], arr[1], arr[2],
-                         self.rho.get(arr[0], arr[1], arr[2]));
-            }
+//            // debug code
+//            for arr in debug_indices.iter() {
+//                println!("At index [{}, {}, {}] have node volume {}", arr[0], arr[1], arr[2],
+//                         self.node_volume.get(arr[0], arr[1], arr[2]));
+//
+//                println!("At index [{}, {}, {}] have number_density {}", arr[0], arr[1], arr[2],
+//                         s.number_density.get(arr[0], arr[1], arr[2]));
+//
+//                println!("At index [{}, {}, {}] have rho {}", arr[0], arr[1], arr[2],
+//                         self.rho.get(arr[0], arr[1], arr[2]));
+//            }
 
         }
     }
     
     pub fn get_ef(&mut self, i: usize, j: usize, k: usize) -> DVec3 {
         self.ef.get(i,j,k)
+    }
+
+    pub fn interpolate_ef(&self, full_idx: DVec3) -> DVec3 {
+        self.ef.linear_interpolate(full_idx)
     }
     
     pub fn print(&self) -> Result <()> {
@@ -309,6 +352,18 @@ impl ThreeDWorldSpec {
         Ok(())
     }
 
+    pub fn compute_potential_energy(&self) -> f64 {
+        let mut pe: f64 = 0.0;
+        for i in 0..self.x_dim.n {
+            for j in 0..self.y_dim.n {
+                for k in 0..self.z_dim.n {
+                    pe += self.ef.get(i,j,k).length_squared() * self.node_volume.get(i,j,k);
+                }
+            }
+        }
+        pe *= 0.5 * EPS0;
+        pe
+    }
     
     fn flatten_dvec3(vs: &[DVec3]) -> Vec<f64> {
         let mut out = Vec::with_capacity(3 * vs.len());

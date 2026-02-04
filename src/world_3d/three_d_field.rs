@@ -1,6 +1,6 @@
 use anyhow::Result;
 use glam::DVec3;
-use std::ops::{AddAssign, SubAssign, MulAssign, DivAssign, Mul};
+use std::ops::{Add, AddAssign, SubAssign, MulAssign, DivAssign, Mul};
 
 // Consider using the ndarray crate instead of custom implementation below
 
@@ -13,7 +13,7 @@ pub struct ThreeDField <T> {
 
 impl<T> ThreeDField <T> 
     where
-    T: Clone + Copy + AddAssign + SubAssign + MulAssign + DivAssign +
+    T: Clone + Copy + Add<Output = T> + AddAssign + SubAssign + MulAssign + DivAssign +
     MulAssign<f64> + Mul<f64, Output = T>, f64 : Mul<T>
 {
 
@@ -66,6 +66,26 @@ impl<T> ThreeDField <T>
         self.add(ix+1, iy+1, iz,   value * (fix) *       (fiy) *       (1.0 - fiz));
         self.add(ix+1, iy+1, iz+1, value * (fix) *       (fiy) *       (fiz));
     }
+
+    pub fn linear_interpolate(&self, full_idx : DVec3) -> T {
+        let ix = full_idx[0] as usize;
+        let fix = full_idx[0] - (ix as f64);
+        let iy = full_idx[1] as usize;
+        let fiy = full_idx[1] - (iy as f64);
+        let iz = full_idx[2] as usize;
+        let fiz = full_idx[2] - (iz as f64);
+
+        let val : T = self.get(ix, iy, iz) * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz) +
+            self.get(ix, iy, iz+1)         * (1.0 - fix) * (1.0 - fiy) *  fiz +
+            self.get(ix, iy+1, iz)         * (1.0 - fix) * fiy         * (1.0 - fiz) +
+            self.get(ix, iy+1, iz+1)       * (1.0 - fix) * fiy         * fiz +
+            self.get(ix+1, iy, iz)         * fix         * (1.0 - fiy) * (1.0 - fiz) +
+            self.get(ix+1, iy, iz+1)       * fix         * (1.0 - fiy) * fiz +
+            self.get(ix+1, iy+1, iz)       * fix         * fiy         * (1.0 - fiz) +
+            self.get(ix+1, iy+1, iz+1)     * fix         * fiy         * fiz ;
+        val
+    }
+    
     
     pub fn len(&self) -> usize { self.data.len() }
 
