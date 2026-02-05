@@ -12,17 +12,15 @@ impl WriteVti {
     // Will append the timestep and .vti suffix to the given path
     
     pub fn write_species_at_time_to_vti(&self, world : &ThreeDWorldSpec,
-                                     all_species : &Vec<Species>,
-                                     timestep : usize,
-                                     base_path: impl AsRef<Path>)
-                                     -> anyhow::Result<()> {
+                                        all_species : &Vec<Species>,
+                                        timestep : usize,
+                                        out_dir: impl AsRef<Path>,
+                                        prefix: &str)
+                                        -> anyhow::Result<()> {
 
         // construct the new name
-        let mut path = base_path.as_ref().to_path_buf();
-        let filename = format!("_{timestep:09}.vti");
-        path.push(filename);
-
-        println!("Writing to file {}", path.display());
+        let out_file = out_dir.as_ref().join(format!("{prefix}_{timestep:09}.vti"));
+//        println!("Writing to file {}", out_file.display());
         
         let npts = world.x_dim.n * world.y_dim.n * world.z_dim.n;
 
@@ -59,7 +57,7 @@ impl WriteVti {
             },
         };
 
-        vtk.export(path)?;
+        vtk.export(out_file)?;
         Ok(())
     }
 }

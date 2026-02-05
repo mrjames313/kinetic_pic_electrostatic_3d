@@ -112,9 +112,10 @@ fn main() -> Result <()> {
 
 //    let diag_output = DiagnosticOutput;
     
-    let num_timesteps = 200;
+    let num_timesteps = 2_000;
     let write_vti = WriteVti;
-    let species_base_name = root.join("images").join("species_sequence").join("species_fields");
+    let species_dir = root.join("images").join("species_sequence");
+    let species_prefix = "species_fields";
     
     for timestep in 0..num_timesteps {
         // TODO: Where does this belong
@@ -129,9 +130,9 @@ fn main() -> Result <()> {
             s.compute_number_density(&world);
         }
 
-        if timestep % 100 == 0 {
+        if timestep % 10 == 0 {
             println!("Iter {timestep}");
-            write_vti.write_species_at_time_to_vti(&world, &all_species, timestep, &species_base_name);
+            write_vti.write_species_at_time_to_vti(&world, &all_species, timestep, &species_dir, &species_prefix);
             //diag_output.print_status(&world, &all_species);
         }
     }
