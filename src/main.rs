@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use kinetic_pic_electrostatic_3d::constants::*;
 use kinetic_pic_electrostatic_3d::world_3d::{ThreeDWorldSpec, SingleDimSpec};
 use kinetic_pic_electrostatic_3d::particles::Species;
-use kinetic_pic_electrostatic_3d::output::{DiagnosticOutput, WriteVti};
+use kinetic_pic_electrostatic_3d::output::{CsvLogger, DiagnosticOutput, WriteVti};
 
 
 // sets up phi for two of the cube sides to non-zero.  Remaining four
@@ -112,14 +112,17 @@ fn main() -> Result <()> {
 
 //    let diag_output = DiagnosticOutput;
     
-    let num_timesteps = 2_000;
+    let num_iterations = 2_000;
     let write_vti = WriteVti;
     let species_dir = root.join("images").join("species_sequence");
     let species_prefix = "species_fields";
-    
-    for timestep in 0..num_timesteps {
+
+    let mut logger = CsvLogger::new(root.join("logs"))?;
+                           
+    world.start_iteration_time();
+    while world.get_iteration() < num_iterations {
         // TODO: Where does this belong
-        world.advance_time();
+        world.advance_iteration();
 
         world.compute_rho(&mut all_species);
     
@@ -129,10 +132,12 @@ fn main() -> Result <()> {
             s.advance(&world);
             s.compute_number_density(&world);
         }
-
-        if timestep % 10 == 0 {
-            println!("Iter {timestep}");
-            write_vti.write_species_at_time_to_vti(&world, &all_species, timestep, &species_dir, &species_prefix);
+        
+        logger.log(&world, &all_species);
+        let iter = world.get_iteration(); // TODO: feels a bit sloppy
+        if iter % 10 == 0 {
+            println!("Iter {iter}");
+            write_vti.write_species_at_time_to_vti(&world, &all_species, iter, &species_dir, &species_prefix);
             //diag_output.print_status(&world, &all_species);
         }
     }

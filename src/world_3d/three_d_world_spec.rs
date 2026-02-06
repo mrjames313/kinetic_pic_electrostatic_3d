@@ -8,6 +8,9 @@ use vtkio::model::{Attribute, Attributes, ByteOrder, DataSet, Extent,
 use super::ThreeDField;
 use crate::constants::*;
 use crate::particles::Species;
+use crate::output::TimeInfo;
+use crate::output::IterInfo;
+
 
 // TODO: refine this, probably have a read-only public interface to all 3 specs
 #[derive(Copy, Clone, Debug)]
@@ -35,6 +38,15 @@ impl SingleDimSpec {
     }
 }
 
+// Iteration and time are assumed to start at 0 and 0.0
+pub struct TimeRepresentation {
+    iteration: usize,
+    sim_time: f64,
+    wall_time: f64, //?
+    dt: f64 // fixed
+}
+
+
 // TODO: priority!  Refactor this - the spec should be open to read-only anywhere
 // including the SingleDimSpecs, node_volume, and time vars.  Use read-only refs
 
@@ -56,10 +68,25 @@ pub struct ThreeDWorldSpec {
     rho: ThreeDField<f64>,
     ef: ThreeDField<DVec3>,
 
-    // Time params
-    dt : f64,
-    time : f64,
+    time: TimeRepresentation,
 }
+
+// Diagnostic info
+// TODO: this is just placeholder now, need to compute potential energy,
+// and total e
+pub fn get_iter_info_from_world(world: &ThreeDWorldSpec) -> IterInfo {
+    let potential_e = 0.0;
+    let total_e = 0.0;
+    IterInfo {potential_e: potential_e, total_e: total_e}
+}
+
+pub fn get_time_info_from_world(world: &ThreeDWorldSpec) -> TimeInfo {
+    let iteration = world.get_iteration();
+    let sim_time = world.get_sim_time();
+    let wall_time = 0.0;
+    TimeInfo {iteration: iteration, sim_time: sim_time, wall_time: wall_time}
+}
+    
 
 impl ThreeDWorldSpec {
 
@@ -75,12 +102,13 @@ impl ThreeDWorldSpec {
         let rho = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
         let ef = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, DVec3::new(0.0, 0.0, 0.0));
         let node_volume = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
-        
+        let time = TimeRepresentation{iteration: 0, sim_time: 0.0,
+                                      wall_time: 0.0, dt: dt};        
         let mut spec = Self{x_dim:x_dim, y_dim:y_dim, z_dim:z_dim,
                             phi:phi, rho:rho, ef:ef, node_volume:node_volume,
-                            dt:dt, time:0.0};
+                            time:time};
         spec.set_node_volumes();
-        
+
         Ok(spec)
     }
 
@@ -97,19 +125,26 @@ impl ThreeDWorldSpec {
     }
 
     pub fn get_dt(&self) -> f64 {
-        self.dt
+        self.time.dt
     }
 
-    pub fn set_time(&mut self, time : f64) {
-        self.time = time;
+    pub fn start_iteration_time(&mut self) {
+        self.time.iteration = 0;
+        self.time.sim_time = 0.0;
+        self.time.wall_time = 0.0; //TODO: figure out how to get wall time
     }
 
-    pub fn get_time(&self) -> f64 {
-        self.time
+    pub fn get_sim_time(&self) -> f64 {
+        self.time.sim_time
     }
 
-    pub fn advance_time(&mut self) {
-        self.time += self.dt;
+    pub fn get_iteration(&self) -> usize {
+        self.time.iteration
+    }
+
+    pub fn advance_iteration(&mut self) {
+        self.time.iteration += 1;
+        self.time.sim_time += self.time.dt;
     }
     
     // some helper functions for key locations in the world

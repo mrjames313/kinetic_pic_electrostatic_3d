@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use crate::world_3d::ThreeDField;
 use crate::world_3d::SingleDimSpec;
 use crate::world_3d::ThreeDWorldSpec;
+use crate::output::SpeciesInfo;
 
 pub struct Particle {
     pos: DVec3,
@@ -22,6 +23,23 @@ pub struct Species {
     pub charge: f64,
     pub number_density: ThreeDField<f64>,
     particles: Vec<Particle>,
+}
+
+
+pub fn get_species_info_from_species<'a>(sp: &'a Species) -> SpeciesInfo<'a> {
+    let mp_count = sp.get_num_particles();
+    let real_count = sp.get_real_count();
+    let total_momentum = sp.get_momentum();
+    let kinetic_e = sp.get_kinetic_energy();
+    SpeciesInfo {
+        name: sp.name.as_str(),
+        mp_count,
+        real_count,
+        momentum_x: total_momentum.x,
+        momentum_y: total_momentum.y,
+        momentum_z: total_momentum.z,
+        kinetic_e,
+    }
 }
 
 impl Species {
@@ -40,13 +58,12 @@ impl Species {
 
     // TODO: Figure out if this will ever change - are we going to lose weight / mass?
     pub fn get_real_count(&self) -> f64 {
-        let mut sum: f64 = 0.0;
-        for p in self.particles.iter() {
-            sum += p.macroparticle_weight;
-        }
+        let sum: f64 = self.particles.iter().map(|p| p.macroparticle_weight).sum();
         sum
     }
 
+    // TODO: understand this: total_momentum: DVec3 = sp.particles.iter().fold(DVec3::ZERO, |acc, p| {
+//        acc + (sp.mass * p.macroparticle_weight) * p.vel
     pub fn get_momentum(&self) -> DVec3 {
         let mut mom: DVec3 = [0.0, 0.0, 0.0].into();
         for p in self.particles.iter() {
@@ -54,7 +71,9 @@ impl Species {
         }
         mom
     }
-
+// TODO: understand this: kinetic_e: f64 = sp.particles.iter().map(|p| {
+//        0.5 * sp.mass * p.macroparticle_weight * p.vel.length_squared()
+//    }).sum();
     pub fn get_kinetic_energy(&self) -> f64 {
         // 1/2 m v^2
         let mut ke: f64 = 0.0;
