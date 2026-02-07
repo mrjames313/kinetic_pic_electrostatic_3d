@@ -39,11 +39,11 @@ fn main() -> Result <()> {
     z_dim.print();
 
     println!("World");
-    world.print_spec();
+    world.print()?;
 
     // don't know if this is necessary before starting sim, but doesn't hurt
-    world.solve_potential_gs_sor(5000);
-    world.compute_ef();
+    world.solve_potential_gs_sor(5000).map_err(anyhow::Error::msg)?;
+    world.compute_ef().map_err(anyhow::Error::msg)?;
     
     world.print()?;
 
@@ -70,10 +70,10 @@ fn main() -> Result <()> {
     let num_den: f64 = 1.0e11;
 
     ions.load_particles_box(world.get_min_corner(), world.get_max_corner(),
-                            num_den, np_ions, &world);
+                            num_den, np_ions, &world)?;
 
     electrons.load_particles_box(world.get_min_corner(), world.get_center(),
-                                 num_den, np_electrons, &world);
+                                 num_den, np_electrons, &world)?;
 
     println!("Now have {} ions, and {} electrons loaded",
              ions.get_num_particles(), electrons.get_num_particles());
@@ -91,7 +91,7 @@ fn main() -> Result <()> {
 
 //    let diag_output = DiagnosticOutput;
     
-    let num_iterations = 10_000;
+    let num_iterations = 1_000;
     let write_vti = WriteVti;
     let species_dir = root.join("images").join("species_sequence");
     let species_prefix = "species_fields";
@@ -105,18 +105,18 @@ fn main() -> Result <()> {
 
         world.compute_rho(&mut all_species);
     
-        world.solve_potential_gs_sor(5000);
-        world.compute_ef();
+        world.solve_potential_gs_sor(5000).map_err(anyhow::Error::msg)?;
+        world.compute_ef().map_err(anyhow::Error::msg)?;
         for s in all_species.iter_mut() {
             s.advance(&world);
             s.compute_number_density(&world);
         }
         
-        logger.log(&world, &all_species);
+        logger.log(&world, &all_species)?;
         let iter = world.get_iteration(); // TODO: feels a bit sloppy
         if iter % 10 == 0 {
             println!("Iter {iter}");
-            write_vti.write_species_at_time_to_vti(&world, &all_species, iter, &species_dir, &species_prefix);
+            write_vti.write_species_at_time_to_vti(&world, &all_species, iter, &species_dir, &species_prefix)?;
             //diag_output.print_status(&world, &all_species);
         }
     }

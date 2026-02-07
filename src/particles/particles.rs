@@ -117,7 +117,7 @@ impl Species {
         // precompute some factors for velocity rewind
         let vel_rewind_factor = 0.5 * world.get_dt() * self.charge / self.mass;
         
-        for i in 0..num_sim_particles {
+        for _i in 0..num_sim_particles {
             pos.x = corner_min.x + rng.gen_range(0.0 .. 1.0) * x_extent;
             pos.y = corner_min.y + rng.gen_range(0.0 .. 1.0) * y_extent;
             pos.z = corner_min.z + rng.gen_range(0.0 .. 1.0) * z_extent;
@@ -135,7 +135,7 @@ impl Species {
     // TODO: Consider if passing world in here is the best design
     pub fn compute_number_density(&mut self, world : &ThreeDWorldSpec) {
         self.number_density.set_all(0.0);
-        let mut rng = rand::thread_rng();
+        //        let mut rng = rand::thread_rng(); // for getting a random sample
 
         // debugging
         let mut counts: HashMap<[usize; 3], usize> = HashMap::new();
@@ -175,7 +175,7 @@ impl Species {
         let dt = world.get_dt();
         let charge_per_mass = self.charge / self.mass;
         
-        for mut particle in self.particles.iter_mut() {
+        for particle in self.particles.iter_mut() {
             let mut full_idx : DVec3 = world.get_full_node_index(particle.pos);
             let ef = world.interpolate_ef(full_idx);
             particle.vel += ef * (dt * charge_per_mass);

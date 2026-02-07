@@ -1,4 +1,3 @@
-use anyhow::Result;
 use glam::DVec3;
 use std::ops::{Add, AddAssign, SubAssign, MulAssign, DivAssign, Mul};
 
@@ -25,8 +24,14 @@ impl<T> ThreeDField <T>
     pub fn set_all(&mut self, val : T) {
         self.data.fill(val);
     }
-    
+
+    // TODO: consider the overhead of these checks
+    // TODO: create testing around this?
     fn idx(&self, ix: usize, iy: usize, iz: usize) -> usize {
+        assert!(ix < self.nx, "x index ({ix}) out of bounds [0, {})", self.nx);
+        assert!(iy < self.ny, "y index ({iy}) out of bounds [0, {})", self.ny);
+        assert!(iz < self.nz, "z index ({iz}) out of bounds [0, {})", self.nz);
+        
         iz * self.nx * self.ny + iy * self.nx + ix
     }
 

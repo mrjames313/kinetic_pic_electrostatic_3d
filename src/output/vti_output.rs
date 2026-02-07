@@ -1,4 +1,4 @@
-use std::path::{Path,PathBuf};
+use std::path::{Path};
 use vtkio::model::{Attribute, Attributes, ByteOrder, DataSet, Extent,
                    ImageDataPiece, Piece, Version, Vtk};
 

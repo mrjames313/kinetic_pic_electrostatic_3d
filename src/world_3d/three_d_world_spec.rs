@@ -31,10 +31,9 @@ impl SingleDimSpec {
         Ok(spec)
     }
 
-    pub fn print(&self) -> Result <()> {
+    pub fn print(&self) {
         println!("Extent: [{:.4}, {:.4}], {} cells, delta {}, center{}", self.min,
                  self.max, self.n-1, self.delta, self.center);
-        Ok(())
     }
 }
 
@@ -74,7 +73,7 @@ pub struct ThreeDWorldSpec {
 // Diagnostic info
 // TODO: this is just placeholder now, need to compute potential energy,
 // and total e
-pub fn get_iter_info_from_world(world: &ThreeDWorldSpec) -> IterInfo {
+pub fn get_iter_info_from_world(_world: &ThreeDWorldSpec) -> IterInfo {
     let potential_e = 0.0;
     let total_e = 0.0;
     IterInfo {potential_e: potential_e, total_e: total_e}
@@ -90,13 +89,6 @@ pub fn get_time_info_from_world(world: &ThreeDWorldSpec) -> TimeInfo {
 
 impl ThreeDWorldSpec {
 
-    pub fn print_spec(&self) {
-        self.x_dim.print();
-        self.y_dim.print();
-        self.z_dim.print();
-    }
-
-    
     pub fn init(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec, dt: f64) -> Result<Self> {
         let phi = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
         let rho = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, 0.0);
@@ -249,11 +241,11 @@ impl ThreeDWorldSpec {
     pub fn print(&self) -> Result <()> {
         println!("Three dimensional world mesh with dimensions:");
         print!("X: ");
-        self.x_dim.print()?;
+        self.x_dim.print();
         print!("Y: ");
-        self.y_dim.print()?;
+        self.y_dim.print();
         print!("Z: ");
-        self.z_dim.print()?;
+        self.z_dim.print();
         Ok(())
     }
 
@@ -451,9 +443,6 @@ impl ThreeDWorldSpec {
         vtk.export(path)?;
         Ok(())
     }
-
-    //pub fn compute_ef() -> Result<()> {
-   // }
 }
     
 
@@ -476,7 +465,8 @@ fn efield_of_constant_phi_is_zero() -> anyhow::Result<()> {
         Err(_) => {return Err(anyhow::anyhow!("bad 3d spec for z"));}
     };
 
-    let mut world = match ThreeDWorldSpec::init(x_dim, y_dim, z_dim) {
+    let dt: f64 = 2e-10;
+    let mut world = match ThreeDWorldSpec::init(x_dim, y_dim, z_dim, dt) {
         Ok(s) => s,
         Err(_) => {
             println!("Failed to create a three d world spec");
@@ -492,8 +482,10 @@ fn efield_of_constant_phi_is_zero() -> anyhow::Result<()> {
             }
         }
     }
-    world.compute_ef();
-    
+    if let Err(e) = world.compute_ef() {
+        return Err(anyhow::anyhow!("EF computation failed with error {}", e))
+    }
+
     let tol = 1e-12;
     for i in 0..world.get_x_dim_n() {
         for j in 0..world.get_y_dim_n() {
@@ -525,7 +517,8 @@ fn efield_of_linear_phi_is_constant() -> anyhow::Result<()> {
         Err(_) => {return Err(anyhow::anyhow!("bad 3d spec for z"));}
     };
 
-    let mut world = match ThreeDWorldSpec::init(x_dim, y_dim, z_dim) {
+    let dt: f64 = 2e-10;
+    let mut world = match ThreeDWorldSpec::init(x_dim, y_dim, z_dim, dt) {
         Ok(s) => s,
         Err(_) => {
             println!("Failed to create a three d world spec");
@@ -550,7 +543,9 @@ fn efield_of_linear_phi_is_constant() -> anyhow::Result<()> {
             }
         }
     }
-    world.compute_ef();
+    if let Err(e) = world.compute_ef() {
+        return Err(anyhow::anyhow!("EF computation failed with error {}", e))
+    }
     
     let tol = 1e-8;
     for i in 0..world.get_x_dim_n() {
