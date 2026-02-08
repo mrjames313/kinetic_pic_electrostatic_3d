@@ -65,7 +65,7 @@ fn main() -> Result <()> {
 
     // now compute the fields with these particles in place
     for s in all_species.iter_mut() {
-        s.compute_number_density(&world);
+        s.compute_number_density(&world.world_spec());
     }
     
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -92,7 +92,7 @@ fn main() -> Result <()> {
         world.compute_ef().map_err(anyhow::Error::msg)?;
         for s in all_species.iter_mut() {
             s.advance(&world);
-            s.compute_number_density(&world);
+            s.compute_number_density(&world.world_spec());
         }
         
         logger.log(&world, &all_species)?;

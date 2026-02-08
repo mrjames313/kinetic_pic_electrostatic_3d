@@ -5,7 +5,7 @@ use rand::Rng;
 // temp
 use std::collections::HashMap;
 
-use crate::world_3d::{ThreeDWorld, SingleDimSpec, ThreeDField};
+use crate::world_3d::{ThreeDWorldSpec, ThreeDWorld, SingleDimSpec, ThreeDField};
 use crate::output::SpeciesInfo;
 
 pub struct Particle {
@@ -131,7 +131,7 @@ impl Species {
     }
 
     // TODO: Consider if passing world in here is the best design
-    pub fn compute_number_density(&mut self, world : &ThreeDWorld) {
+    pub fn compute_number_density(&mut self, world_spec : &ThreeDWorldSpec) {
         self.number_density.set_all(0.0);
         //        let mut rng = rand::thread_rng(); // for getting a random sample
 
@@ -145,7 +145,7 @@ impl Species {
 //                         particle.pos[1], particle.pos[2], particle.macroparticle_weight);
 //            }
             
-            let full_idx : DVec3 = world.world_spec().get_full_node_index(particle.pos);
+            let full_idx : DVec3 = world_spec.get_full_node_index(particle.pos);
 
             // debug
             let key = [full_idx[0] as usize, full_idx[1] as usize, full_idx[2] as usize];
@@ -159,7 +159,7 @@ impl Species {
             self.number_density.distribute(full_idx, particle.macroparticle_weight);
         }
         // TODO: think about whether divide is the right operation here
-        self.number_density.elementwise_inplace_div(world.world_spec().node_volume());
+        self.number_density.elementwise_inplace_div(world_spec.node_volume());
 
 // TOOD: Figure out if testing is needed for this debug code        
 //        // get some stats
