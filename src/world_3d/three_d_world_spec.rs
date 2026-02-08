@@ -1,6 +1,7 @@
 use anyhow::Result;
 use glam::DVec3;  // might consider using ndarray in the future
 use std::path::Path;
+use std::time::Instant;
 use vtkio::model::{Attribute, Attributes, ByteOrder, DataSet, Extent,
                    ImageDataPiece, Piece, Version, Vtk};
 
@@ -50,7 +51,8 @@ pub struct TimeRepresentation {
     iteration: usize,
     sim_time: f64,
     wall_time: f64, // TODO: finish this
-    dt: f64 // fixed
+    wall_timer: Instant,
+    dt: f64, // fixed
 }
 
 impl TimeRepresentation {
@@ -58,6 +60,20 @@ impl TimeRepresentation {
     pub fn sim_time(&self) -> f64 { self.sim_time }
     pub fn wall_time(&self) -> f64 { self.wall_time }
     pub fn dt(&self) -> f64 { self.dt }
+
+    pub fn start_iteration_time(&mut self) {
+        self.iteration = 0;
+        self.sim_time = 0.0;
+        self.wall_time = 0.0;
+        self.wall_timer = Instant::now();
+    }
+
+    pub fn advance_iteration(&mut self) {
+        self.wall_time = self.wall_timer.elapsed().as_secs_f64();
+        self.iteration += 1;
+        self.sim_time += self.dt;
+    }
+
 }
 
 pub struct ThreeDWorldSpec {
@@ -156,7 +172,7 @@ pub fn get_iter_info_from_world(_world: &ThreeDWorld) -> IterInfo {
 pub fn get_time_info_from_world(world: &ThreeDWorld) -> TimeInfo {
     let iteration = world.time().iteration();
     let sim_time = world.time().sim_time();
-    let wall_time = 0.0;
+    let wall_time = world.time().wall_time();
     TimeInfo {iteration: iteration, sim_time: sim_time, wall_time: wall_time}
 }
     
@@ -170,8 +186,8 @@ impl ThreeDWorld {
         
         Ok(Self {
             world_spec,
-            time: TimeRepresentation{iteration: 0, sim_time: 0.0,
-                                     wall_time: 0.0, dt: dt},
+            time: TimeRepresentation{iteration: 0, sim_time: 0.0, wall_time: 0.0,
+                                     wall_timer: Instant::now(), dt: dt},
             phi: ThreeDField::init(nx, ny, nz, 0.0),
             rho: ThreeDField::init(nx, ny, nz, 0.0),
             ef: ThreeDField::init(nx, ny, nz, DVec3::new(0.0, 0.0, 0.0)),
@@ -180,68 +196,12 @@ impl ThreeDWorld {
 
     pub fn world_spec(&self) -> &ThreeDWorldSpec {&self.world_spec }
     pub fn time(&self) -> &TimeRepresentation {&self.time }
+    pub fn mut_time(&mut self) -> &mut TimeRepresentation {&mut self.time }
     
     pub fn phi(&self) -> &ThreeDField<f64> {&self.phi}
     pub fn rho(&self) -> &ThreeDField<f64> {&self.rho}
     pub fn ef(&self) -> &ThreeDField<DVec3> {&self.ef}
     
-    pub fn start_iteration_time(&mut self) {
-        self.time.iteration = 0;
-        self.time.sim_time = 0.0;
-        self.time.wall_time = 0.0; //TODO: figure out how to get wall time
-    }
-
-    pub fn get_sim_time(&self) -> f64 {
-        self.time.sim_time
-    }
-
-    pub fn get_iteration(&self) -> usize {
-        self.time.iteration
-    }
-
-    pub fn advance_iteration(&mut self) {
-        self.time.iteration += 1;
-        self.time.sim_time += self.time.dt;
-    }
-    
-    // some helper functions for key locations in the world
-    pub fn get_min_corner(&self) -> DVec3 {
-        DVec3::new(self.world_spec.x_dim().min(), self.world_spec.y_dim().min(),
-                   self.world_spec.z_dim().min())
-    }
-
-    pub fn get_center(&self) -> DVec3 {
-        DVec3::new(self.world_spec.x_dim().center(), self.world_spec.y_dim().center(),
-                   self.world_spec.z_dim().center())
-    }
-
-    pub fn get_max_corner(&self) -> DVec3 {
-        DVec3::new(self.world_spec.x_dim().max(), self.world_spec.y_dim().max(),
-                   self.world_spec.z_dim().max())
-    }
-
-    // TODO: determine if this assert is too expensive, maybe make debug-only? debug_assert!
-    pub fn get_full_node_index(&self, real_coord : DVec3) -> DVec3 {
-        assert!(real_coord[0] >= self.world_spec.x_dim().min() && real_coord[0] <= self.world_spec.x_dim().max() &&
-               real_coord[1] >= self.world_spec.y_dim().min() && real_coord[1] <= self.world_spec.y_dim().max() &&
-               real_coord[2] >= self.world_spec.z_dim().min() && real_coord[2] <= self.world_spec.z_dim().max(),
-               "One of the node coordinates {real_coord} is out of bounds");
-        
-        let mut index : DVec3 = [0.0, 0.0, 0.0].into();
-        index[0] = (real_coord[0] - self.world_spec.x_dim().min()) / self.world_spec.x_dim().delta();
-        index[1] = (real_coord[1] - self.world_spec.y_dim().min()) / self.world_spec.y_dim().delta();
-        index[2] = (real_coord[2] - self.world_spec.z_dim().min()) / self.world_spec.z_dim().delta();
-        index
-    }
-
-    pub fn get_full_node_index_no_assert(&self, real_coord : DVec3) -> DVec3 {
-        let mut index : DVec3 = [0.0, 0.0, 0.0].into();
-                index[0] = (real_coord[0] - self.world_spec.x_dim().min()) / self.world_spec.x_dim().delta();
-        index[1] = (real_coord[1] - self.world_spec.y_dim().min()) / self.world_spec.y_dim().delta();
-        index[2] = (real_coord[2] - self.world_spec.z_dim().min()) / self.world_spec.z_dim().delta();
-        index
-    }
-
     pub fn set_phi(&mut self, i: usize, j: usize, k: usize, val: f64) {
         self.phi.set(i,j,k,val);
     }

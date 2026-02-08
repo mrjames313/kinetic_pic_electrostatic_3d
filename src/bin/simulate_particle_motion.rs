@@ -52,10 +52,10 @@ fn main() -> Result <()> {
     let np_electrons: usize = 10_000;
     let num_den: f64 = 1.0e11;
 
-    ions.load_particles_box(world.get_min_corner(), world.get_max_corner(),
+    ions.load_particles_box(world.world_spec().get_min_corner(), world.world_spec().get_max_corner(),
                             num_den, np_ions, &world)?;
 
-    electrons.load_particles_box(world.get_min_corner(), world.get_center(),
+    electrons.load_particles_box(world.world_spec().get_min_corner(), world.world_spec().get_center(),
                                  num_den, np_electrons, &world)?;
 
     println!("Now have {} ions, and {} electrons loaded",
@@ -81,10 +81,10 @@ fn main() -> Result <()> {
 
     let mut logger = CsvLogger::new(root.join("logs"))?;
                            
-    world.start_iteration_time();
-    while world.get_iteration() < num_iterations {
+    world.mut_time().start_iteration_time();
+    while world.time().iteration() < num_iterations {
         // TODO: Where does this belong
-        world.advance_iteration();
+        world.mut_time().advance_iteration();
 
         world.compute_rho(&mut all_species);
     
@@ -96,7 +96,7 @@ fn main() -> Result <()> {
         }
         
         logger.log(&world, &all_species)?;
-        let iter = world.get_iteration(); // TODO: feels a bit sloppy
+        let iter = world.time().iteration(); // TODO: feels a bit sloppy
         if iter % 10 == 0 {
             println!("Iter {iter}");
             write_vti.write_species_at_time_to_vti(&world, &all_species, iter, &species_dir, &species_prefix)?;
