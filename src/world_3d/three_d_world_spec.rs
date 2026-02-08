@@ -88,7 +88,7 @@ impl ThreeDWorldSpec {
                -> anyhow::Result<Self> {
         // Node volumes are reduced along faces, edges, corners
         let vol = x_dim.delta * y_dim.delta * z_dim.delta;
-        let mut node_volume = ThreeDField::init(x_dim.n, y_dim.n, z_dim.n, vol);
+        let mut node_volume = ThreeDField::new(x_dim.n, y_dim.n, z_dim.n, vol)?;
 
         let half : f64 = 0.5;
         for i in 0 .. x_dim.n() {
@@ -188,9 +188,9 @@ impl ThreeDWorld {
             world_spec,
             time: TimeRepresentation{iteration: 0, sim_time: 0.0, wall_time: 0.0,
                                      wall_timer: Instant::now(), dt: dt},
-            phi: ThreeDField::init(nx, ny, nz, 0.0),
-            rho: ThreeDField::init(nx, ny, nz, 0.0),
-            ef: ThreeDField::init(nx, ny, nz, DVec3::new(0.0, 0.0, 0.0)),
+            phi: ThreeDField::new(nx, ny, nz, 0.0)?,
+            rho: ThreeDField::new(nx, ny, nz, 0.0)?,
+            ef: ThreeDField::new(nx, ny, nz, DVec3::new(0.0, 0.0, 0.0))?,
         } )
     }
 

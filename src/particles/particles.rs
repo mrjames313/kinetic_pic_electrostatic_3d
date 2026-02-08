@@ -43,7 +43,7 @@ pub fn get_species_info_from_species<'a>(sp: &'a Species) -> SpeciesInfo<'a> {
 impl Species {
     pub fn init(name: String, mass: f64, charge: f64,
                 x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec) -> Result<Self> {
-        let num_den = ThreeDField::init(x_dim.n(), y_dim.n(), z_dim.n(), 0.0);
+        let num_den = ThreeDField::new(x_dim.n(), y_dim.n(), z_dim.n(), 0.0)?;
         let p = Vec::new();
         let s = Self{name:name, mass:mass, charge:charge,
                      number_density:num_den, particles:p };
@@ -155,7 +155,6 @@ impl Species {
 //            if (full_idx[0] as usize == 5 && full_idx[1] as usize == 5 && full_idx[2] as usize == 5) {
 //                println!("At 5,5,5, distributing weight {}", particle.macroparticle_weight);
 //            }
-            
             self.number_density.distribute(full_idx, particle.macroparticle_weight);
         }
         // TODO: think about whether divide is the right operation here
