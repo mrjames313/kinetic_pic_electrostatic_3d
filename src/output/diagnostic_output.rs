@@ -4,7 +4,7 @@ use std::io::BufWriter;
 use std::path::Path;
 use serde::Serialize;
 
-use crate::world_3d::ThreeDWorldSpec;
+use crate::world_3d::{ThreeDWorld};
 use crate::world_3d::three_d_world_spec::{get_iter_info_from_world, get_time_info_from_world};
 use crate::particles::Species;
 use crate::particles::particles::get_species_info_from_species;
@@ -122,7 +122,7 @@ impl CsvLogger {
     }
 
     pub fn log_iter_row(&mut self, t_info: &TimeInfo,
-                        world: &ThreeDWorldSpec) -> Result<()> {
+                        world: &ThreeDWorld) -> Result<()> {
         let i_info: IterInfo = get_iter_info_from_world(&world);
         let row: IterRow = IterRow{
             iteration: t_info.iteration,
@@ -145,7 +145,7 @@ impl CsvLogger {
     }
 
     
-    pub fn log(&mut self, world: &ThreeDWorldSpec,
+    pub fn log(&mut self, world: &ThreeDWorld,
                all_species: &[Species]) -> Result<()> {
         let t_info = get_time_info_from_world(&world);
         self.log_iter_row(&t_info, &world)?;
@@ -159,8 +159,8 @@ pub struct DiagnosticOutput;
 
 impl DiagnosticOutput {
 
-    pub fn print_status(&self, world : &ThreeDWorldSpec, all_species : &Vec<Species>) {
-        print!("ts: {}, ", world.get_sim_time());
+    pub fn print_status(&self, world : &ThreeDWorld, all_species : &Vec<Species>) {
+        print!("ts: {}, ", world.time().sim_time());
         for s in all_species.iter() {
             print!("{}: {}", s.name, s.get_num_particles());
         }
