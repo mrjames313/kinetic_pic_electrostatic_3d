@@ -10,3 +10,6 @@ glam = "0.29"
 rand = "0.8"
 serde = {version = "1", features = ["derive"] }
 vtkio = "0.6.3"
+
+[features]
+bounds-check = []

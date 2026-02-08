@@ -19,6 +19,68 @@ impl<T> ThreeDField <T>
         Ok( Self {nx, ny, nz, data: vec![val; nx * ny * nz], } )
     }
 
+    // Next three functions implement common assertions for code below,
+    // and use debug_assert! and --feature bounds-check as feature flags
+    #[inline(always)]
+    fn check_idx(&self, ix: usize, iy: usize, iz: usize) {
+        // Always active in debug builds
+        debug_assert!(ix < self.nx, "x index ({ix}) out of bounds [0, {})", self.nx);
+        debug_assert!(iy < self.ny, "y index ({iy}) out of bounds [0, {})", self.ny);
+        debug_assert!(iz < self.nz, "z index ({iz}) out of bounds [0, {})", self.nz);
+    }
+
+    #[inline(always)]
+    fn check_trilinear(&self, ix: usize, iy: usize, iz: usize, full_idx: DVec3) {
+        // These are the conditions needed because you access ix+1, iy+1, iz+1
+        debug_assert!(
+            ix + 1 < self.nx && iy + 1 < self.ny && iz + 1 < self.nz,
+            "trilinear requires interior indices: (ix,iy,iz)=({ix},{iy},{iz}) dims=({},{},{}) full_idx={full_idx:?}",
+            self.nx, self.ny, self.nz
+        );
+
+        #[cfg(feature = "bounds-check")]
+        {
+            assert!(
+                full_idx.x.is_finite() && full_idx.y.is_finite() && full_idx.z.is_finite(),
+                "non-finite full_idx: {full_idx:?}"
+            );
+            assert!(
+                full_idx.x >= 0.0 && full_idx.y >= 0.0 && full_idx.z >= 0.0,
+                "negative full_idx not allowed: {full_idx:?}"
+            );
+            
+            // Must be strictly interior because we touch ix+1, iy+1, iz+1
+            let max_x = (self.nx - 1) as f64;
+            let max_y = (self.ny - 1) as f64;
+            let max_z = (self.nz - 1) as f64;
+            assert!(
+                full_idx.x < max_x && full_idx.y < max_y && full_idx.z < max_z,
+                "trilinear requires full_idx < (nx-1, ny-1, nz-1): full_idx={full_idx:?}, dims=({}, {}, {})",
+                self.nx, self.ny, self.nz
+            );
+        }
+    }
+
+    #[inline(always)]
+    fn check_same_shape(&self, other: &ThreeDField<T>) {
+        debug_assert!(
+            self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
+            "shape mismatch: self=({}, {}, {}), other=({}, {}, {})",
+            self.nx, self.ny, self.nz, other.nx, other.ny, other.nz
+        );
+        debug_assert!(
+            self.data().len() == other.data().len(),
+            "length mismatch: self: {}, other: {}",
+            self.data().len(), other.data().len()
+        );
+        #[cfg(feature = "bounds-check")]
+        {
+            // Extra: catch internal inconsistency bugs
+            assert_eq!(self.data.len(), self.nx * self.ny * self.nz, "self data length inconsistent");
+            assert_eq!(other.data.len(), other.nx * other.ny * other.nz, "other data length inconsistent");
+        }
+    }
+
     pub fn set_all(&mut self, val : T) {
         self.data.fill(val);
     }
@@ -26,10 +88,7 @@ impl<T> ThreeDField <T>
     // TODO: consider the overhead of these checks
     // TODO: create testing around this?
     fn idx(&self, ix: usize, iy: usize, iz: usize) -> usize {
-        assert!(ix < self.nx, "x index ({ix}) out of bounds [0, {})", self.nx);
-        assert!(iy < self.ny, "y index ({iy}) out of bounds [0, {})", self.ny);
-        assert!(iz < self.nz, "z index ({iz}) out of bounds [0, {})", self.nz);
-        
+        self.check_idx(ix, iy, iz);
         iz * self.nx * self.ny + iy * self.nx + ix
     }
 
@@ -52,17 +111,6 @@ impl<T> ThreeDField <T>
     // full_idx has both the integer and fractional components, and
     // it must be strictly less than the upper index boundary
     pub fn distribute(&mut self, full_idx : DVec3, value : T) {
-        assert!(full_idx[0] >= 0.0 && full_idx[0] < (self.nx-1) as f64,
-                "x index {} out of bounds [0, {})",
-                full_idx[0], self.nx-1);
-        assert!(full_idx[1] >= 0.0 && full_idx[1] < (self.ny-1) as f64,
-                "y index {} out of bounds [0, {})",
-                full_idx[1], self.ny-1);
-        assert!(full_idx[2] >= 0.0 && full_idx[2] < (self.nz-1) as f64,
-                "z index {} out of bounds [0, {})",
-                full_idx[2], self.nz-1);
-        
-        // TODO: add asserts on bounds, will introduce a return for error
         let ix = full_idx[0] as usize;
         let fix = full_idx[0] - (ix as f64);
         let iy = full_idx[1] as usize;
@@ -70,6 +118,8 @@ impl<T> ThreeDField <T>
         let iz = full_idx[2] as usize;
         let fiz = full_idx[2] - (iz as f64);
 
+        self.check_trilinear(ix, iy, iz, full_idx);
+                        
         self.add(ix,   iy,   iz,   value * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz));
         self.add(ix,   iy,   iz+1, value * (1.0 - fix) * (1.0 - fiy) * (fiz));
         self.add(ix,   iy+1, iz,   value * (1.0 - fix) * (fiy) *       (1.0 - fiz));
@@ -81,22 +131,14 @@ impl<T> ThreeDField <T>
     }
 
     pub fn linear_interpolate(&self, full_idx : DVec3) -> T {
-        assert!(full_idx[0] >= 0.0 && full_idx[0] < (self.nx-1) as f64,
-                "x index {} out of bounds [0, {})",
-                full_idx[0], self.nx-1);
-        assert!(full_idx[1] >= 0.0 && full_idx[1] < (self.ny-1) as f64,
-                "y index {} out of bounds [0, {})",
-                full_idx[1], self.ny-1);
-        assert!(full_idx[2] >= 0.0 && full_idx[2] < (self.nz-1) as f64,
-                "z index {} out of bounds [0, {})",
-                full_idx[2], self.nz-1);
-
         let ix = full_idx[0] as usize;
         let fix = full_idx[0] - (ix as f64);
         let iy = full_idx[1] as usize;
         let fiy = full_idx[1] - (iy as f64);
         let iz = full_idx[2] as usize;
         let fiz = full_idx[2] - (iz as f64);
+
+        self.check_trilinear(ix, iy, iz, full_idx);
 
         let val : T = self.get(ix, iy, iz) * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz) +
             self.get(ix, iy, iz+1)         * (1.0 - fix) * (1.0 - fiy) *  fiz +
@@ -115,9 +157,7 @@ impl<T> ThreeDField <T>
     pub fn data(&self) -> &[T] { &self.data }
     
     pub fn elementwise_inplace_add(&mut self, other: &ThreeDField<T>) {
-        assert_eq!(self.data.len(), other.data.len(), "length mismatch");
-        assert!(self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
-                "dimension mismatch");
+        self.check_same_shape(&other);
 
         for (x,y) in self.data.iter_mut().zip(&other.data) {
             *x += *y;
@@ -125,9 +165,7 @@ impl<T> ThreeDField <T>
     }
 
     pub fn elementwise_inplace_sub(&mut self, other: &ThreeDField<T>) {
-        assert_eq!(self.data.len(), other.data.len(), "dimension mismatch");
-        assert!(self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
-                "dimension mismatch");
+        self.check_same_shape(&other);
 
         for (x,y) in self.data.iter_mut().zip(&other.data) {
             *x -= *y;
@@ -135,9 +173,7 @@ impl<T> ThreeDField <T>
     }
 
     pub fn elementwise_inplace_mult(&mut self, other: &ThreeDField<T>) {
-        assert_eq!(self.data.len(), other.data.len(), "dimension mismatch");
-        assert!(self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
-                "dimension mismatch");
+        self.check_same_shape(&other);
 
         for (x,y) in self.data.iter_mut().zip(&other.data) {
             *x *= *y;
@@ -146,9 +182,7 @@ impl<T> ThreeDField <T>
 
     pub fn elementwise_inplace_add_scaled(&mut self, scale : f64,
                                           other: &ThreeDField<T>) {
-        assert_eq!(self.data.len(), other.data.len(), "dimension mismatch");
-        assert!(self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
-                "dimension mismatch");
+        self.check_same_shape(&other);
 
         for (x,y) in self.data.iter_mut().zip(&other.data) {
             *x += *y * scale;
@@ -156,9 +190,7 @@ impl<T> ThreeDField <T>
     }
 
     pub fn elementwise_inplace_div(&mut self, other: &ThreeDField<T>) {
-        assert_eq!(self.data.len(), other.data.len(), "dimension mismatch");
-        assert!(self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
-                "dimension mismatch");
+        self.check_same_shape(&other);
         
         for (x,y) in self.data.iter_mut().zip(&other.data) {
             *x /= *y;
