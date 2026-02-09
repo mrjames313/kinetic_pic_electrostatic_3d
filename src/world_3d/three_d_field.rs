@@ -1,22 +1,33 @@
 use glam::DVec3;
-use std::ops::{Add, AddAssign, SubAssign, MulAssign, DivAssign, Mul};
+use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, SubAssign};
 
-
-pub struct ThreeDField <T> {
+pub struct ThreeDField<T> {
     nx: usize,
     ny: usize,
     nz: usize,
     data: Vec<T>,
 }
 
-impl<T> ThreeDField <T> 
-    where
-    T: Clone + Copy + Add<Output = T> + AddAssign + SubAssign + MulAssign + DivAssign +
-    MulAssign<f64> + Mul<f64, Output = T>, f64 : Mul<T>
+impl<T> ThreeDField<T>
+where
+    T: Clone
+        + Copy
+        + Add<Output = T>
+        + AddAssign
+        + SubAssign
+        + MulAssign
+        + DivAssign
+        + MulAssign<f64>
+        + Mul<f64, Output = T>,
+    f64: Mul<T>,
 {
-
     pub fn new(nx: usize, ny: usize, nz: usize, val: T) -> anyhow::Result<Self> {
-        Ok( Self {nx, ny, nz, data: vec![val; nx * ny * nz], } )
+        Ok(Self {
+            nx,
+            ny,
+            nz,
+            data: vec![val; nx * ny * nz],
+        })
     }
 
     // Next three functions implement common assertions for code below,
@@ -24,9 +35,21 @@ impl<T> ThreeDField <T>
     #[inline(always)]
     fn check_idx(&self, ix: usize, iy: usize, iz: usize) {
         // Always active in debug builds
-        debug_assert!(ix < self.nx, "x index ({ix}) out of bounds [0, {})", self.nx);
-        debug_assert!(iy < self.ny, "y index ({iy}) out of bounds [0, {})", self.ny);
-        debug_assert!(iz < self.nz, "z index ({iz}) out of bounds [0, {})", self.nz);
+        debug_assert!(
+            ix < self.nx,
+            "x index ({ix}) out of bounds [0, {})",
+            self.nx
+        );
+        debug_assert!(
+            iy < self.ny,
+            "y index ({iy}) out of bounds [0, {})",
+            self.ny
+        );
+        debug_assert!(
+            iz < self.nz,
+            "z index ({iz}) out of bounds [0, {})",
+            self.nz
+        );
     }
 
     #[inline(always)]
@@ -50,7 +73,7 @@ impl<T> ThreeDField <T>
                 full_idx.x >= 0.0 && full_idx.y >= 0.0 && full_idx.z >= 0.0,
                 "negative full_idx not allowed: {full_idx:?}"
             );
-            
+
             // Must be strictly interior because we touch ix+1, iy+1, iz+1
             let max_x = (self.nx - 1) as f64;
             let max_y = (self.ny - 1) as f64;
@@ -68,22 +91,36 @@ impl<T> ThreeDField <T>
         debug_assert!(
             self.nx == other.nx && self.ny == other.ny && self.nz == other.nz,
             "shape mismatch: self=({}, {}, {}), other=({}, {}, {})",
-            self.nx, self.ny, self.nz, other.nx, other.ny, other.nz
+            self.nx,
+            self.ny,
+            self.nz,
+            other.nx,
+            other.ny,
+            other.nz
         );
         debug_assert!(
             self.data().len() == other.data().len(),
             "length mismatch: self: {}, other: {}",
-            self.data().len(), other.data().len()
+            self.data().len(),
+            other.data().len()
         );
         #[cfg(feature = "bounds-check")]
         {
             // Extra: catch internal inconsistency bugs
-            assert_eq!(self.data.len(), self.nx * self.ny * self.nz, "self data length inconsistent");
-            assert_eq!(other.data.len(), other.nx * other.ny * other.nz, "other data length inconsistent");
+            assert_eq!(
+                self.data.len(),
+                self.nx * self.ny * self.nz,
+                "self data length inconsistent"
+            );
+            assert_eq!(
+                other.data.len(),
+                other.nx * other.ny * other.nz,
+                "other data length inconsistent"
+            );
         }
     }
 
-    pub fn set_all(&mut self, val : T) {
+    pub fn set_all(&mut self, val: T) {
         self.data.fill(val);
     }
 
@@ -94,7 +131,7 @@ impl<T> ThreeDField <T>
         iz * self.nx * self.ny + iy * self.nx + ix
     }
 
-    pub fn get(&self, ix: usize, iy: usize, iz: usize) ->  T {
+    pub fn get(&self, ix: usize, iy: usize, iz: usize) -> T {
         self.data[self.idx(ix, iy, iz)]
     }
 
@@ -112,6 +149,7 @@ impl<T> ThreeDField <T>
     // volumetric proportion
     // full_idx has both the integer and fractional components, and
     // it must be strictly less than the upper index boundary
+    #[rustfmt::skip]
     pub fn distribute(&mut self, full_idx : DVec3, value : T) {
         let ix = full_idx.x as usize;
         let fix = full_idx.x - (ix as f64);
@@ -121,7 +159,8 @@ impl<T> ThreeDField <T>
         let fiz = full_idx.z - (iz as f64);
 
         self.check_trilinear(ix, iy, iz, full_idx);
-                        
+
+
         self.add(ix,   iy,   iz,   value * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz));
         self.add(ix,   iy,   iz+1, value * (1.0 - fix) * (1.0 - fiy) * (fiz));
         self.add(ix,   iy+1, iz,   value * (1.0 - fix) * (fiy) *       (1.0 - fiz));
@@ -132,6 +171,7 @@ impl<T> ThreeDField <T>
         self.add(ix+1, iy+1, iz+1, value * (fix) *       (fiy) *       (fiz));
     }
 
+    #[rustfmt::skip]
     pub fn linear_interpolate(&self, full_idx : DVec3) -> T {
         let ix = full_idx.x as usize;
         let fix = full_idx.x - (ix as f64);
@@ -142,26 +182,30 @@ impl<T> ThreeDField <T>
 
         self.check_trilinear(ix, iy, iz, full_idx);
 
-        let val : T = self.get(ix, iy, iz) * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz) +
-            self.get(ix, iy, iz+1)         * (1.0 - fix) * (1.0 - fiy) *  fiz +
-            self.get(ix, iy+1, iz)         * (1.0 - fix) * fiy         * (1.0 - fiz) +
-            self.get(ix, iy+1, iz+1)       * (1.0 - fix) * fiy         * fiz +
-            self.get(ix+1, iy, iz)         * fix         * (1.0 - fiy) * (1.0 - fiz) +
-            self.get(ix+1, iy, iz+1)       * fix         * (1.0 - fiy) * fiz +
-            self.get(ix+1, iy+1, iz)       * fix         * fiy         * (1.0 - fiz) +
-            self.get(ix+1, iy+1, iz+1)     * fix         * fiy         * fiz ;
+        let val: T =
+                self.get(ix, iy, iz)       * (1.0 - fix) * (1.0 - fiy) * (1.0 - fiz) +
+                self.get(ix, iy, iz+1)     * (1.0 - fix) * (1.0 - fiy) *  fiz +
+                self.get(ix, iy+1, iz)     * (1.0 - fix) * fiy         * (1.0 - fiz) +
+                self.get(ix, iy+1, iz+1)   * (1.0 - fix) * fiy         * fiz +
+                self.get(ix+1, iy, iz)     * fix         * (1.0 - fiy) * (1.0 - fiz) +
+                self.get(ix+1, iy, iz+1)   * fix         * (1.0 - fiy) * fiz +
+                self.get(ix+1, iy+1, iz)   * fix         * fiy         * (1.0 - fiz) +
+                self.get(ix+1, iy+1, iz+1) * fix         * fiy         * fiz;
         val
     }
-    
-    
-    pub fn len(&self) -> usize { self.data.len() }
 
-    pub fn data(&self) -> &[T] { &self.data }
-    
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn data(&self) -> &[T] {
+        &self.data
+    }
+
     pub fn elementwise_inplace_add(&mut self, other: &ThreeDField<T>) {
         self.check_same_shape(&other);
 
-        for (x,y) in self.data.iter_mut().zip(&other.data) {
+        for (x, y) in self.data.iter_mut().zip(&other.data) {
             *x += *y;
         }
     }
@@ -169,7 +213,7 @@ impl<T> ThreeDField <T>
     pub fn elementwise_inplace_sub(&mut self, other: &ThreeDField<T>) {
         self.check_same_shape(&other);
 
-        for (x,y) in self.data.iter_mut().zip(&other.data) {
+        for (x, y) in self.data.iter_mut().zip(&other.data) {
             *x -= *y;
         }
     }
@@ -177,42 +221,39 @@ impl<T> ThreeDField <T>
     pub fn elementwise_inplace_mult(&mut self, other: &ThreeDField<T>) {
         self.check_same_shape(&other);
 
-        for (x,y) in self.data.iter_mut().zip(&other.data) {
+        for (x, y) in self.data.iter_mut().zip(&other.data) {
             *x *= *y;
         }
     }
 
-    pub fn elementwise_inplace_add_scaled(&mut self, scale : f64,
-                                          other: &ThreeDField<T>) {
+    pub fn elementwise_inplace_add_scaled(&mut self, scale: f64, other: &ThreeDField<T>) {
         self.check_same_shape(&other);
 
-        for (x,y) in self.data.iter_mut().zip(&other.data) {
+        for (x, y) in self.data.iter_mut().zip(&other.data) {
             *x += *y * scale;
         }
     }
 
     pub fn elementwise_inplace_div(&mut self, other: &ThreeDField<T>) {
         self.check_same_shape(&other);
-        
-        for (x,y) in self.data.iter_mut().zip(&other.data) {
+
+        for (x, y) in self.data.iter_mut().zip(&other.data) {
             *x /= *y;
         }
     }
 
-//    fn scalar_inplace_add(&mut self, s: f64) {
-//        for x in self.data.iter_mut() {
-//            *x += s;
-//        }
-//    }
+    //    fn scalar_inplace_add(&mut self, s: f64) {
+    //        for x in self.data.iter_mut() {
+    //            *x += s;
+    //        }
+    //    }
 
     pub fn scalar_inplace_mult(&mut self, s: f64) {
         for x in self.data.iter_mut() {
             *x *= s;
         }
     }
-    
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -278,7 +319,7 @@ mod tests {
         let value = 10.0;
         let p = DVec3::new(1.25, 2.5, 1.75); // interior: ix=1,iy=2,iz=1; +1 still in-bounds
 
-        f.distribute(p, value);  // Doesn't make any assumptions about where to distribute, just conservation
+        f.distribute(p, value); // Doesn't make any assumptions about where to distribute, just conservation
 
         let total = sum_field(&f);
         assert!((total - value).abs() < 1e-12);
@@ -466,5 +507,4 @@ mod tests {
         let b = ThreeDField::<f64>::new(2, 2, 1, 1.0).unwrap();
         a.elementwise_inplace_add_scaled(1.0, &b);
     }
-
 }
