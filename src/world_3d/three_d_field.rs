@@ -37,6 +37,8 @@ impl<T> ThreeDField <T>
             "trilinear requires interior indices: (ix,iy,iz)=({ix},{iy},{iz}) dims=({},{},{}) full_idx={full_idx:?}",
             self.nx, self.ny, self.nz
         );
+        debug_assert!(full_idx.x.is_finite() && full_idx.y.is_finite() && full_idx.z.is_finite());
+        debug_assert!(full_idx.x >= 0.0 && full_idx.y >= 0.0 && full_idx.z >= 0.0);
 
         #[cfg(feature = "bounds-check")]
         {
@@ -111,12 +113,12 @@ impl<T> ThreeDField <T>
     // full_idx has both the integer and fractional components, and
     // it must be strictly less than the upper index boundary
     pub fn distribute(&mut self, full_idx : DVec3, value : T) {
-        let ix = full_idx[0] as usize;
-        let fix = full_idx[0] - (ix as f64);
-        let iy = full_idx[1] as usize;
-        let fiy = full_idx[1] - (iy as f64);
-        let iz = full_idx[2] as usize;
-        let fiz = full_idx[2] - (iz as f64);
+        let ix = full_idx.x as usize;
+        let fix = full_idx.x - (ix as f64);
+        let iy = full_idx.y as usize;
+        let fiy = full_idx.y - (iy as f64);
+        let iz = full_idx.z as usize;
+        let fiz = full_idx.z - (iz as f64);
 
         self.check_trilinear(ix, iy, iz, full_idx);
                         
@@ -131,12 +133,12 @@ impl<T> ThreeDField <T>
     }
 
     pub fn linear_interpolate(&self, full_idx : DVec3) -> T {
-        let ix = full_idx[0] as usize;
-        let fix = full_idx[0] - (ix as f64);
-        let iy = full_idx[1] as usize;
-        let fiy = full_idx[1] - (iy as f64);
-        let iz = full_idx[2] as usize;
-        let fiz = full_idx[2] - (iz as f64);
+        let ix = full_idx.x as usize;
+        let fix = full_idx.x - (ix as f64);
+        let iy = full_idx.y as usize;
+        let fiy = full_idx.y - (iy as f64);
+        let iz = full_idx.z as usize;
+        let fiz = full_idx.z - (iz as f64);
 
         self.check_trilinear(ix, iy, iz, full_idx);
 
