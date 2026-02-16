@@ -21,13 +21,13 @@ where
         + Mul<f64, Output = T>,
     f64: Mul<T>,
 {
-    pub fn new(nx: usize, ny: usize, nz: usize, val: T) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new(nx: usize, ny: usize, nz: usize, val: T) -> Self {
+        Self {
             nx,
             ny,
             nz,
             data: vec![val; nx * ny * nz],
-        })
+        }
     }
 
     // Next three functions implement common assertions for code below,
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn set_get_roundtrip() {
-        let mut f = ThreeDField::<f64>::new(4, 3, 2, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 3, 2, 0.0);
         f.set(0, 0, 0, 1.0);
         f.set(3, 2, 1, 7.5);
         f.set(1, 2, 0, -2.0);
@@ -275,27 +275,27 @@ mod tests {
     #[test]
     #[should_panic]
     fn get_panics_on_oob_x() {
-        let f = ThreeDField::<f64>::new(4, 3, 2, 0.0).unwrap();
+        let f = ThreeDField::<f64>::new(4, 3, 2, 0.0);
         let _ = f.get(4, 0, 0);
     }
 
     #[test]
     #[should_panic]
     fn get_panics_on_oob_y() {
-        let f = ThreeDField::<f64>::new(4, 3, 2, 0.0).unwrap();
+        let f = ThreeDField::<f64>::new(4, 3, 2, 0.0);
         let _ = f.get(0, 3, 0);
     }
 
     #[test]
     #[should_panic]
     fn get_panics_on_oob_z() {
-        let f = ThreeDField::<f64>::new(4, 3, 2, 0.0).unwrap();
+        let f = ThreeDField::<f64>::new(4, 3, 2, 0.0);
         let _ = f.get(0, 0, 2);
     }
 
     #[test]
     fn set_all_fills_everywhere() {
-        let mut f = ThreeDField::<f64>::new(3, 2, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(3, 2, 4, 0.0);
         f.set_all(2.5);
         assert_eq!(f.len(), 3 * 2 * 4);
         assert!(f.data().iter().all(|&x| x == 2.5));
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn add_accumulates() {
-        let mut f = ThreeDField::<f64>::new(2, 2, 2, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(2, 2, 2, 0.0);
         f.add(1, 0, 1, 1.5);
         f.add(1, 0, 1, 2.0);
         assert_eq!(f.get(1, 0, 1), 3.5);
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn distribute_conserves_sum_interior() {
-        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         let value = 10.0;
         let p = DVec3::new(1.25, 2.5, 1.75); // interior: ix=1,iy=2,iz=1; +1 still in-bounds
 
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn distribute_on_node_goes_to_single_cell() {
-        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         let value = 3.0;
         let p = DVec3::new(1.0, 2.0, 1.0);
 
@@ -342,22 +342,22 @@ mod tests {
     #[test]
     #[should_panic]
     fn distribute_panics_near_upper_boundary() {
-        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         // ix=3 => ix+1 out of bounds
-        let _ = f.distribute(DVec3::new(3.1, 1.2, 1.2), 6.5);
+        f.distribute(DVec3::new(3.1, 1.2, 1.2), 6.5);
     }
 
     #[test]
     #[should_panic]
     fn distribute_panics_beyond_lower_boundary() {
-        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         // ix=2 < 0 out of bounds
-        let _ = f.distribute(DVec3::new(3.1, -0.4, 1.2), -2.5);
+        f.distribute(DVec3::new(3.1, -0.4, 1.2), -2.5);
     }
 
     #[test]
     fn linear_interpolate_constant_field() {
-        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         f.set_all(7.0);
 
         let v = f.linear_interpolate(DVec3::new(1.2, 2.7, 0.3));
@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn linear_interpolate_exact_on_nodes() {
-        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         f.set(2, 1, 2, 9.5);
 
         let v = f.linear_interpolate(DVec3::new(2.0, 1.0, 2.0));
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn linear_interpolate_reproduces_linear_field() {
         let (nx, ny, nz) = (5, 6, 7);
-        let mut f = ThreeDField::<f64>::new(nx, ny, nz, 0.0).unwrap();
+        let mut f = ThreeDField::<f64>::new(nx, ny, nz, 0.0);
 
         let ax = 1.2;
         let ay = -0.7;
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn linear_interpolate_panics_near_upper_boundary() {
-        let f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         // ix=3 => ix+1 out of bounds
         let _ = f.linear_interpolate(DVec3::new(3.1, 1.2, 1.2));
     }
@@ -411,15 +411,15 @@ mod tests {
     #[test]
     #[should_panic]
     fn linear_interpolate_panics_beyond_lower_boundary() {
-        let f = ThreeDField::<f64>::new(4, 4, 4, 0.0).unwrap();
+        let f = ThreeDField::<f64>::new(4, 4, 4, 0.0);
         // ix=1 < 0 out of bounds
         let _ = f.linear_interpolate(DVec3::new(-3.1, 1.2, 1.2));
     }
 
     #[test]
     fn elementwise_inplace_add_works() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0);
 
         a.elementwise_inplace_add(&b);
         assert!(a.data().iter().all(|&x| x == 3.0));
@@ -428,15 +428,15 @@ mod tests {
     #[test]
     #[should_panic]
     fn elementwise_add_panics_on_mismatch() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(3, 2, 2, 2.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(3, 2, 2, 2.0);
         a.elementwise_inplace_add(&b);
     }
 
     #[test]
     fn elementwise_inplace_sub_works() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 5.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 5.0);
+        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0);
 
         a.elementwise_inplace_sub(&b);
         assert!(a.data().iter().all(|&x| x == 3.0));
@@ -444,8 +444,8 @@ mod tests {
 
     #[test]
     fn elementwise_inplace_mult_works() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 3.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 3.0);
+        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0);
 
         a.elementwise_inplace_mult(&b);
         assert!(a.data().iter().all(|&x| x == 6.0));
@@ -453,8 +453,8 @@ mod tests {
 
     #[test]
     fn elementwise_inplace_div_works() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 6.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 6.0);
+        let b = ThreeDField::<f64>::new(2, 2, 2, 2.0);
 
         a.elementwise_inplace_div(&b);
         assert!(a.data().iter().all(|&x| x == 3.0));
@@ -462,8 +462,8 @@ mod tests {
 
     #[test]
     fn elementwise_inplace_add_scaled_works() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 2, 3.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(2, 2, 2, 3.0);
 
         a.elementwise_inplace_add_scaled(2.0, &b); // a = 1 + 2*3 = 7
         assert!(a.data().iter().all(|&x| x == 7.0));
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn scalar_inplace_mult_works() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.5).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.5);
         a.scalar_inplace_mult(3.0);
         assert!(a.data().iter().all(|&x| x == 4.5));
     }
@@ -479,32 +479,32 @@ mod tests {
     #[test]
     #[should_panic]
     fn elementwise_sub_panics_on_mismatch() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 3, 2, 1.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(2, 3, 2, 1.0);
         a.elementwise_inplace_sub(&b);
     }
 
     #[test]
     #[should_panic]
     fn elementwise_mult_panics_on_mismatch() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 3, 1.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(2, 2, 3, 1.0);
         a.elementwise_inplace_mult(&b);
     }
 
     #[test]
     #[should_panic]
     fn elementwise_div_panics_on_mismatch() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(1, 2, 2, 1.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(1, 2, 2, 1.0);
         a.elementwise_inplace_div(&b);
     }
 
     #[test]
     #[should_panic]
     fn elementwise_add_scaled_panics_on_mismatch() {
-        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0).unwrap();
-        let b = ThreeDField::<f64>::new(2, 2, 1, 1.0).unwrap();
+        let mut a = ThreeDField::<f64>::new(2, 2, 2, 1.0);
+        let b = ThreeDField::<f64>::new(2, 2, 1, 1.0);
         a.elementwise_inplace_add_scaled(1.0, &b);
     }
 }

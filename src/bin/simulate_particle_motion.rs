@@ -31,22 +31,8 @@ fn main() -> Result <()> {
     world.print()?;
 
     // now introduce particles to the system
-    let mut ions = match Species::init("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim) {
-        Ok(s) => s,
-        Err(_) => {
-            println!("Failed to create ions species");
-            return Err(anyhow::anyhow!("Bad ions species spec"));
-        }
-    };
-    
-    let mut electrons = match Species::init("e".to_string(), ME, -1.0 * QE, x_dim, y_dim, z_dim) {
-        Ok(s) => s,
-        Err(_) => {
-            println!("Failed to create electrons species");
-            return Err(anyhow::anyhow!("Bad electrons species spec"));
-        }
-    };
-
+    let mut ions = Species::new("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim);    
+    let mut electrons = Species::new("e".to_string(), ME, -1.0 * QE, x_dim, y_dim, z_dim);
 
     let np_ions: usize = 80_000;
     let np_electrons: usize = 10_000;

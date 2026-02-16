@@ -84,11 +84,55 @@ pub struct ThreeDWorldSpec {
 }
 
 impl ThreeDWorldSpec {
+
+    #[inline(always)]
+    fn check_dims_basic(&self) {
+        // cheap invariants; useful everywhere
+        debug_assert!(self.x_dim.n() >= 2 && self.y_dim.n() >= 2 && self.z_dim.n() >= 2);
+        debug_assert!(self.x_dim.max() > self.x_dim.min());
+        debug_assert!(self.y_dim.max() > self.y_dim.min());
+        debug_assert!(self.z_dim.max() > self.z_dim.min());
+        debug_assert!(self.x_dim.delta().is_finite() && self.x_dim.delta() > 0.0);
+        debug_assert!(self.y_dim.delta().is_finite() && self.y_dim.delta() > 0.0);
+        debug_assert!(self.z_dim.delta().is_finite() && self.z_dim.delta() > 0.0);
+
+        #[cfg(feature = "bounds-check")]
+        {
+            // heavier: internal consistency & lengths
+            assert_eq!(
+                self.node_volume.len(),
+                self.x_dim.n() * self.y_dim.n() * self.z_dim.n(),
+                "node_volume length mismatch vs dims"
+            );
+            // node_volume should be positive everywhere
+            assert!(self.node_volume.data().iter().all(|&v| v.is_finite() && v > 0.0));
+        }
+    }
+
+    #[inline(always)]
+    fn check_real_coord_in_bounds(&self, real_coord: DVec3) {
+        // cheap: bounds check (debug only)
+        debug_assert!(
+            real_coord.x >= self.x_dim.min() && real_coord.x <= self.x_dim.max() &&
+            real_coord.y >= self.y_dim.min() && real_coord.y <= self.y_dim.max() &&
+            real_coord.z >= self.z_dim.min() && real_coord.z <= self.z_dim.max(),
+            "real_coord out of bounds: {real_coord:?}"
+        );
+
+        #[cfg(feature = "bounds-check")]
+        {
+            assert!(
+                real_coord.x.is_finite() && real_coord.y.is_finite() && real_coord.z.is_finite(),
+                "real_coord must be finite: {real_coord:?}"
+            );
+        }
+    }
+
     pub fn new(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec)
                -> anyhow::Result<Self> {
         // Node volumes are reduced along faces, edges, corners
         let vol = x_dim.delta * y_dim.delta * z_dim.delta;
-        let mut node_volume = ThreeDField::new(x_dim.n, y_dim.n, z_dim.n, vol)?;
+        let mut node_volume = ThreeDField::new(x_dim.n, y_dim.n, z_dim.n, vol);
 
         let half : f64 = 0.5;
         for i in 0 .. x_dim.n() {
@@ -103,7 +147,9 @@ impl ThreeDWorldSpec {
                 }
             }
         }
-        Ok( Self { x_dim, y_dim, z_dim, node_volume } )
+        let spec = Self { x_dim, y_dim, z_dim, node_volume };
+        spec.check_dims_basic();
+        Ok(spec)
     }
 
     pub fn x_dim(&self) -> &SingleDimSpec { &self.x_dim }
@@ -129,10 +175,7 @@ impl ThreeDWorldSpec {
 
     // TODO: determine if this assert is too expensive, maybe make debug-only? debug_assert!
     pub fn get_full_node_index(&self, real_coord : DVec3) -> DVec3 {
-        assert!(real_coord[0] >= self.x_dim.min() && real_coord[0] <= self.x_dim.max() &&
-               real_coord[1] >= self.y_dim.min() && real_coord[1] <= self.y_dim.max() &&
-               real_coord[2] >= self.z_dim.min() && real_coord[2] <= self.z_dim.max(),
-               "One of the node coordinates {real_coord} is out of bounds");
+        self.check_real_coord_in_bounds(real_coord);
         
         let mut index : DVec3 = [0.0, 0.0, 0.0].into();
         index[0] = (real_coord[0] - self.x_dim.min()) / self.x_dim.delta();
@@ -179,19 +222,64 @@ pub fn get_time_info_from_world(world: &ThreeDWorld) -> TimeInfo {
 
 impl ThreeDWorld {
 
+    #[inline(always)]
+    fn check_world_shapes(&self) {
+        let nx = self.world_spec.x_dim().n();
+        let ny = self.world_spec.y_dim().n();
+        let nz = self.world_spec.z_dim().n();
+
+        debug_assert_eq!(self.phi.len(), nx * ny * nz);
+        debug_assert_eq!(self.rho.len(), nx * ny * nz);
+        debug_assert_eq!(self.ef.len(),  nx * ny * nz);
+
+        #[cfg(feature = "bounds-check")]
+        {
+            // check spec consistency too
+            self.world_spec.check_dims_basic();
+
+            // verify all dt etc are reasonable
+            assert!(self.time.dt.is_finite() && self.time.dt > 0.0, "dt must be >0 and finite");
+            assert!(EPS0.is_finite() && EPS0 > 0.0, "EPS0 must be >0 and finite");
+
+            // sanity: phi/rho finite if you rely on them numerically
+            assert!(self.phi.data().iter().all(|&v| v.is_finite()));
+            assert!(self.rho.data().iter().all(|&v| v.is_finite()));
+            assert!(self.ef.data().iter().all(|v| v.x.is_finite() && v.y.is_finite() && v.z.is_finite()));
+        }
+    }
+
+    #[inline(always)]
+    fn check_min_dims_for_stencils(&self) {
+        // compute_ef uses +/-2 at boundaries => need at least 3 points in each dim
+        debug_assert!(self.world_spec.x_dim().n() >= 3);
+        debug_assert!(self.world_spec.y_dim().n() >= 3);
+        debug_assert!(self.world_spec.z_dim().n() >= 3);
+
+        #[cfg(feature = "bounds-check")]
+        {
+            assert!(self.world_spec.x_dim().n() >= 3, "x_dim.n must be >= 3 for compute_ef stencils");
+            assert!(self.world_spec.y_dim().n() >= 3, "y_dim.n must be >= 3 for compute_ef stencils");
+            assert!(self.world_spec.z_dim().n() >= 3, "z_dim.n must be >= 3 for compute_ef stencils");
+        }
+    }
+
+
     pub fn new(world_spec: ThreeDWorldSpec, dt: f64) -> anyhow::Result<Self> {
         let nx = world_spec.x_dim().n();
         let ny = world_spec.y_dim().n();
         let nz = world_spec.z_dim().n();
         
-        Ok(Self {
+        let world = Self {
             world_spec,
             time: TimeRepresentation{iteration: 0, sim_time: 0.0, wall_time: 0.0,
                                      wall_timer: Instant::now(), dt: dt},
-            phi: ThreeDField::new(nx, ny, nz, 0.0)?,
-            rho: ThreeDField::new(nx, ny, nz, 0.0)?,
-            ef: ThreeDField::new(nx, ny, nz, DVec3::new(0.0, 0.0, 0.0))?,
-        } )
+            phi: ThreeDField::new(nx, ny, nz, 0.0),
+            rho: ThreeDField::new(nx, ny, nz, 0.0),
+            ef: ThreeDField::new(nx, ny, nz, DVec3::new(0.0, 0.0, 0.0)),
+        };
+        world.check_world_shapes();
+        world.check_min_dims_for_stencils();
+        Ok(world)
     }
 
     pub fn world_spec(&self) -> &ThreeDWorldSpec {&self.world_spec }
@@ -206,8 +294,22 @@ impl ThreeDWorld {
         self.phi.set(i,j,k,val);
     }
 
+    // A couple helper functions, used in testing
+    pub(crate) fn phi_mut(&mut self) -> &mut ThreeDField<f64> { &mut self.phi }
+    pub(crate) fn rho_mut(&mut self) -> &mut ThreeDField<f64> { &mut self.rho }
+
+
     // Requires that these fields are the same dim, etc
-    pub fn compute_rho(&mut self, species : &Vec<Species>) {
+    pub fn compute_rho(&mut self, species : &[Species]) {
+        self.check_world_shapes();
+        #[cfg(feature = "bounds-check")]
+        {
+            for s in species {
+                assert_eq!(s.number_density.len(), self.rho.len(), "species {} density shape mismatch", s.name);
+                assert!(s.charge.is_finite(), "species {} has non-finite charge", s.name);
+                assert!(s.number_density.data().iter().all(|&v| v.is_finite()), "species {} has non-finite density", s.name);
+            }
+        }
         self.rho.set_all(0.0);
 //        // debugging indices
 //        let debug_indices: Vec<[usize; 3]> = [[5,5,5], [5,5,15], [5,15,5], [5,15,15],
@@ -219,6 +321,19 @@ impl ThreeDWorld {
 //                     self.rho.get(arr[0], arr[1], arr[2]));
 //        }
         
+        #[cfg(feature = "bounds-check")]
+        {
+            for s in species {
+                assert!(s.charge.is_finite(),
+                        "species {} has non-finite charge",
+                        s.name);
+                assert!(
+                    s.number_density.data().iter().all(|&v| v.is_finite()),
+                    "species {} has non-finite number_density",
+                    s.name
+                );
+            }
+        }
 
         for s in species.iter() {
 //            println!("New species {}, charge {}", s.name, s.charge);
@@ -237,9 +352,17 @@ impl ThreeDWorld {
 //            }
 
         }
+        #[cfg(feature = "bounds-check")]
+        {
+            assert!(
+                self.rho.data().iter().all(|&v| v.is_finite()),
+                "rho contains non-finite values after compute_rho"
+            );
+        }
+
     }
     
-    pub fn get_ef(&mut self, i: usize, j: usize, k: usize) -> DVec3 {
+    pub fn get_ef(&self, i: usize, j: usize, k: usize) -> DVec3 {
         self.ef.get(i,j,k)
     }
 
@@ -259,6 +382,12 @@ impl ThreeDWorld {
     }
 
     pub fn solve_potential_gs_sor(&mut self, max_iter : usize) -> Result<usize, String> {
+        self.check_world_shapes();
+        debug_assert!(max_iter > 0);
+        debug_assert!(self.world_spec.x_dim().n() >= 3 &&
+                      self.world_spec.y_dim().n() >= 3 &&
+                      self.world_spec.z_dim().n() >= 3);
+        
         // params that control execution
         let w : f64 = 1.4;
         let l2_conv : f64 = 1e-6;
@@ -321,6 +450,14 @@ impl ThreeDWorld {
     }
 
     pub fn compute_ef(&mut self) -> Result<(), String> {
+        self.check_world_shapes();
+        self.check_min_dims_for_stencils();
+
+        #[cfg(feature="bounds=check")]
+        {
+            assert!(self.phi.data().iter().all(|&v| v.is_finite()), "phi contains NaNs or Infs");
+        }
+        
         let two_dx : f64 = 2.0 * self.world_spec.x_dim().delta();
         let two_dy : f64 = 2.0 * self.world_spec.y_dim().delta();
         let two_dz : f64 = 2.0 * self.world_spec.z_dim().delta();
@@ -389,6 +526,20 @@ impl ThreeDWorld {
     }
 
     pub fn compute_potential_energy(&self) -> f64 {
+        debug_assert_eq!(self.ef.len(),
+                         self.world_spec.x_dim().n() *
+                         self.world_spec.y_dim().n() *
+                         self.world_spec.z_dim().n());
+
+        #[cfg(feature="bounds-check")]
+        {
+            assert!(self.ef.data().iter().all(|v| v.x.is_finite() &&
+                                              v.y.is_finite() &&
+                                              v.z.is_finite()));
+            assert!(self.world_spec.node_volume().data().iter().all(|&v| v.is_finite() && v > 0.0));
+        }
+
+
         let mut pe: f64 = 0.0;
         for i in 0..self.world_spec.x_dim().n() {
             for j in 0..self.world_spec.y_dim().n() {
@@ -418,6 +569,13 @@ impl ThreeDWorld {
         anyhow::ensure!(self.phi.len() == npts, "phi wrong length");
         anyhow::ensure!(self.rho.len() == npts, "rho wrong length");
         anyhow::ensure!(self.ef.len() == npts, "ef_xyz wrong length (need 3*npts)"); // this might not work 
+
+        #[cfg(feature="bounds-check")]
+        {
+            let ef_flat = Self::flatten_dvec3(self.ef.data());
+            assert_eq!(ef_flat.len(), 3 * npts,
+                       "flattened ef must have 3*npts scalars");
+        }
 
         // Attach arrays as POINT_DATA (common for potentials/fields sampled at grid points).
         let mut attrs = Attributes::new();
@@ -457,82 +615,544 @@ impl ThreeDWorld {
 
 // Probably should set up different numbers of cells, deltas, and initial positions
 // for the world, in both functions below
-#[test]
-fn efield_of_constant_phi_is_zero() -> anyhow::Result<()> {
-    let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-    let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-    let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
-    let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
-    let dt: f64 = 2e-10;
-    let mut world = ThreeDWorld::new(world_spec, dt)?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::DVec3;
 
-    let const_val: f64 = 13.444;
-    
-    for i in 0..world.world_spec().x_dim().n() {
-        for j in 0..world.world_spec().y_dim().n() {
-            for k in 0..world.world_spec().z_dim().n() {
-                world.set_phi(i, j, k, const_val);
+    #[test]
+    fn efield_of_constant_phi_is_zero() -> anyhow::Result<()> {
+        let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
+        let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
+        let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
+        let dt: f64 = 2e-10;
+        let mut world = ThreeDWorld::new(world_spec, dt)?;
+
+        let const_val: f64 = 13.444;
+        
+        for i in 0..world.world_spec().x_dim().n() {
+            for j in 0..world.world_spec().y_dim().n() {
+                for k in 0..world.world_spec().z_dim().n() {
+                    world.set_phi(i, j, k, const_val);
+                }
             }
         }
-    }
-    if let Err(e) = world.compute_ef() {
-        return Err(anyhow::anyhow!("EF computation failed with error {}", e))
-    }
+        if let Err(e) = world.compute_ef() {
+            return Err(anyhow::anyhow!("EF computation failed with error {}", e))
+        }
 
-    let tol = 1e-12;
-    for i in 0..world.world_spec().x_dim().n() {
-        for j in 0..world.world_spec().y_dim().n() {
-            for k in 0..world.world_spec().z_dim().n() {
-                let e = world.get_ef(i,j,k);
-                assert!(e[0].abs() < tol);
-                assert!(e[1].abs() < tol);
-                assert!(e[2].abs() < tol);
+        let tol = 1e-12;
+        for i in 0..world.world_spec().x_dim().n() {
+            for j in 0..world.world_spec().y_dim().n() {
+                for k in 0..world.world_spec().z_dim().n() {
+                    let e = world.get_ef(i,j,k);
+                    assert!(e[0].abs() < tol);
+                    assert!(e[1].abs() < tol);
+                    assert!(e[2].abs() < tol);
+                }
             }
         }
+        Ok(())
     }
-    Ok(())
+
+    #[test]
+    fn efield_of_linear_phi_is_constant() -> anyhow::Result<()> {
+        let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
+        let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
+        let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
+        let dt: f64 = 2e-10;
+        let mut world = ThreeDWorld::new(world_spec, dt)?;
+        
+        let (x0, y0, z0) = (0.0, 0.0, 0.0);
+        let (a, b, c) = (1.7, -0.4, 0.9);
+        let (dx, dy, dz) = (x_dim.delta(), y_dim.delta(), z_dim.delta());
+        
+        fn linear_interp(i: usize, init: f64, scale: f64, delta: f64) ->
+            f64 {init + (i as f64) * scale * delta }
+        
+        for i in 0..world.world_spec().x_dim().n() {
+            for j in 0..world.world_spec().y_dim().n() {
+                for k in 0..world.world_spec().z_dim().n() {
+                    let x = linear_interp(i, x0, a, dx);
+                    let y = linear_interp(j, y0, b, dy);
+                    let z = linear_interp(k, z0, c, dz);
+                    world.set_phi(i, j, k, x + y + z);
+                }
+            }
+        }
+        if let Err(e) = world.compute_ef() {
+            return Err(anyhow::anyhow!("EF computation failed with error {}", e))
+        }
+        
+        let tol = 1e-8;
+        for i in 0..world.world_spec().x_dim().n() {
+            for j in 0..world.world_spec().y_dim().n() {
+                for k in 0..world.world_spec().z_dim().n() {
+                    let e = world.get_ef(i,j,k);
+                    assert!((e[0] + a).abs() < tol, "values {} and {} should only differ in sign", e[0], a );
+                    assert!((e[1] + b).abs() < tol, "values {} and {} should only differ in sign", e[1], b);
+                    assert!((e[2] + c).abs() < tol, "values {} and {} should only differ in sign", e[2], c );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn single_dim_spec_computes_delta_and_center() -> anyhow::Result<()> {
+        let s = SingleDimSpec::new(11, -1.0, 1.0)?;
+        assert_eq!(s.n(), 11);
+        assert!((s.delta() - 0.2).abs() < 1e-12);
+        assert!((s.center() - 0.0).abs() < 1e-12);
+        Ok(())
+    }
+
+    #[test]
+    fn world_spec_node_volume_scales_on_boundaries() -> anyhow::Result<()> {
+        let x = SingleDimSpec::new(4, 0.0, 3.0)?;
+        let y = SingleDimSpec::new(4, 0.0, 3.0)?;
+        let z = SingleDimSpec::new(4, 0.0, 3.0)?;
+        let ws = ThreeDWorldSpec::new(x, y, z)?;
+
+        let vol = x.delta() * y.delta() * z.delta();
+        let nv = ws.node_volume();
+
+        // interior
+        assert!((nv.get(1, 1, 1) - vol).abs() < 1e-12);
+
+        // face (one boundary)
+        assert!((nv.get(0, 1, 1) - vol * 0.5).abs() < 1e-12);
+
+        // edge (two boundaries)
+        assert!((nv.get(0, 0, 1) - vol * 0.25).abs() < 1e-12);
+
+        // corner (three boundaries)
+        assert!((nv.get(0, 0, 0) - vol * 0.125).abs() < 1e-12);
+
+        Ok(())
+    }
+
+    #[test]
+    fn full_node_index_maps_corners() -> anyhow::Result<()> {
+        let x = SingleDimSpec::new(11, -1.0, 1.0)?;
+        let y = SingleDimSpec::new(11, -2.0, 2.0)?;
+        let z = SingleDimSpec::new(11,  0.0, 1.0)?;
+        let ws = ThreeDWorldSpec::new(x, y, z)?;
+
+        let min = ws.get_min_corner();
+        let max = ws.get_max_corner();
+
+        let idx_min = ws.get_full_node_index(min);
+        assert!((idx_min.x - 0.0).abs() < 1e-12);
+        assert!((idx_min.y - 0.0).abs() < 1e-12);
+        assert!((idx_min.z - 0.0).abs() < 1e-12);
+
+        let idx_max = ws.get_full_node_index(max);
+        assert!((idx_max.x - (ws.x_dim().n() as f64 - 1.0)).abs() < 1e-12);
+        assert!((idx_max.y - (ws.y_dim().n() as f64 - 1.0)).abs() < 1e-12);
+        assert!((idx_max.z - (ws.z_dim().n() as f64 - 1.0)).abs() < 1e-12);
+
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic]
+    fn full_node_index_panics_out_of_bounds() {
+        let x = SingleDimSpec::new(11, 0.0, 1.0).unwrap();
+        let y = SingleDimSpec::new(11, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(11, 0.0, 1.0).unwrap();
+        let ws = ThreeDWorldSpec::new(x, y, z).unwrap();
+
+        let _ = ws.get_full_node_index(DVec3::new(-0.1, 0.5, 0.5));
+    }
+
+    #[test]
+    fn gs_sor_converges_for_zero_rho() -> anyhow::Result<()> {
+        let x_dim = SingleDimSpec::new(11, -0.1, 0.1)?;
+        let y_dim = SingleDimSpec::new(11, -0.1, 0.1)?;
+        let z_dim = SingleDimSpec::new(11, -0.1, 0.1)?;
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
+        let mut world = ThreeDWorld::new(world_spec, 1e-9)?;
+
+        // rho already zero; phi already zero
+        let iters = world.solve_potential_gs_sor(2000)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        // It might converge at iter=0 or very quickly; just assert it did converge.
+        assert!(iters < 2000);
+
+        // Spot check phi remains ~0
+        let tol = 1e-12;
+        for i in 0..world.world_spec().x_dim().n() {
+            for j in 0..world.world_spec().y_dim().n() {
+                for k in 0..world.world_spec().z_dim().n() {
+                    assert!(world.phi().get(i,j,k).abs() < tol);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn potential_energy_zero_for_zero_field() -> anyhow::Result<()> {
+        let x_dim = SingleDimSpec::new(7, 0.0, 1.0)?;
+        let y_dim = SingleDimSpec::new(7, 0.0, 1.0)?;
+        let z_dim = SingleDimSpec::new(7, 0.0, 1.0)?;
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
+        let mut world = ThreeDWorld::new(world_spec, 1e-9)?;
+        
+        // ef initialized to zero
+        let pe = world.compute_potential_energy();
+        assert!(pe.abs() < 1e-18);
+        Ok(())
+    }
+
 }
 
-#[test]
-fn efield_of_linear_phi_is_constant() -> anyhow::Result<()> {
-    let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-    let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-    let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
-    let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
-    let dt: f64 = 2e-10;
-    let mut world = ThreeDWorld::new(world_spec, dt)?;
+#[cfg(test)]
+mod rho_tests {
+    use super::*;
+    use crate::particles::{Species, Particle};
 
-    let (x0, y0, z0) = (0.0, 0.0, 0.0);
-    let (a, b, c) = (1.7, -0.4, 0.9);
-    let (dx, dy, dz) = (x_dim.delta(), y_dim.delta(), z_dim.delta());
+    fn make_world(nx: usize, ny: usize, nz: usize) -> ThreeDWorld {
+        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
+        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let spec = ThreeDWorldSpec::new(x, y, z).unwrap();
+        ThreeDWorld::new(spec, 1e-9).unwrap()
+    }
 
-    fn linear_interp(i: usize, init: f64, scale: f64, delta: f64) ->
-        f64 {init + (i as f64) * scale * delta }
-    
-    for i in 0..world.world_spec().x_dim().n() {
-        for j in 0..world.world_spec().y_dim().n() {
-            for k in 0..world.world_spec().z_dim().n() {
-                let x = linear_interp(i, x0, a, dx);
-                let y = linear_interp(j, y0, b, dy);
-                let z = linear_interp(k, z0, c, dz);
-                world.set_phi(i, j, k, x + y + z);
+    #[test]
+    fn compute_rho_empty_species_is_zero() {
+        let mut world = make_world(5, 4, 3);
+
+        world.compute_rho(&Vec::new());
+
+        for i in 0..world.world_spec().x_dim().n() {
+            for j in 0..world.world_spec().y_dim().n() {
+                for k in 0..world.world_spec().z_dim().n() {
+                    assert_eq!(world.rho().get(i, j, k), 0.0);
+                }
             }
         }
     }
-    if let Err(e) = world.compute_ef() {
-        return Err(anyhow::anyhow!("EF computation failed with error {}", e))
-    }
-    
-    let tol = 1e-8;
-    for i in 0..world.world_spec().x_dim().n() {
-        for j in 0..world.world_spec().y_dim().n() {
-            for k in 0..world.world_spec().z_dim().n() {
-                let e = world.get_ef(i,j,k);
-                assert!((e[0] + a).abs() < tol, "values {} and {} should only differ in sign", e[0], a );
-                assert!((e[1] + b).abs() < tol, "values {} and {} should only differ in sign", e[1], b);
-                assert!((e[2] + c).abs() < tol, "values {} and {} should only differ in sign", e[2], c );
+
+    #[test]
+    fn compute_rho_single_species_matches_charge_times_density() {
+        let (nx, ny, nz) = (5, 4, 3);
+        let mut world = make_world(nx, ny, nz);
+
+        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
+        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let mut s = Species::new("ions", 2.0, 2.0, x, y, z);
+
+        // Make density vary so we’re not just testing a constant field
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    let nd = (i as f64) + 10.0 * (j as f64) + 100.0 * (k as f64);
+                    s.number_density.set(i, j, k, nd);
+                }
+            }
+        }
+
+        world.compute_rho(&vec![s]);
+
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    let nd = (i as f64) + 10.0 * (j as f64) + 100.0 * (k as f64);
+                    let expected = 2.0 * nd;
+                    let got = world.rho().get(i, j, k);
+                    assert!((got - expected).abs() < 1e-12);
+                }
             }
         }
     }
-    Ok(())
+
+    #[test]
+    fn compute_rho_two_species_sums_correctly_with_negative_charge() {
+        let (nx, ny, nz) = (5, 4, 3);
+        let mut world = make_world(nx, ny, nz);
+
+        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap(); // These will copy into below
+        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let mut ions = Species::new("ions", 1.0, 1.0, x, y, z);
+        let mut elec = Species::new("electrons", 0.1, -1.0, x, y, z);
+
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    let n1 = 1.0 + (i as f64);
+                    let n2 = 0.5 + 2.0 * (j as f64);
+                    ions.number_density.set(i, j, k, n1);
+                    elec.number_density.set(i, j, k, n2);
+                }
+            }
+        }
+
+        world.compute_rho(&vec![ions, elec]);
+
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    let n1 = 1.0 + (i as f64);
+                    let n2 = 0.5 + 2.0 * (j as f64);
+                    let expected = 1.0 * n1 + (-1.0) * n2;
+                    let got = world.rho().get(i, j, k);
+                    assert!((got - expected).abs() < 1e-12);
+                }
+            }
+        }
+    }
+
+    // Optional: only if your ThreeDField elementwise ops check shape and panic on mismatch.
+    #[test]
+    #[should_panic]
+    fn compute_rho_panics_on_density_shape_mismatch() {
+        let mut world = make_world(5, 4, 3);
+
+        let (nx, ny, nz) = (6, 4, 3);
+
+        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
+        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+
+        // Deliberately wrong dimensions
+        let bad = Species::new("bad", 1.0, 1.0, x, y, z);
+
+        world.compute_rho(&vec![bad]);
+    }
+    
+    #[test]
+    fn compute_rho_resets_previous_values() {
+        let (nx, ny, nz) = (5, 4, 3);
+        let mut world = make_world(nx, ny, nz);
+        
+        // poison rho with junk
+        world.rho_mut().set_all(123.0);
+        
+        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
+        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let mut s = Species::new("ions", 1.0, 2.0, x, y, z);
+        
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    s.number_density.set(i, j, k, 1.0);
+                }
+            }
+        }
+        
+        world.compute_rho(&[s]);
+
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    assert!((world.rho().get(i,j,k) - 2.0).abs() < 1e-12);
+                }
+            }
+        }
+    }
+
+}
+
+#[cfg(test)]
+mod poisson_tests {
+    use super::*;
+    use glam::DVec3;
+
+    fn make_world(n: usize) -> ThreeDWorld {
+        let x = SingleDimSpec::new(n, 0.0, 1.0).unwrap();
+        let y = SingleDimSpec::new(n, 0.0, 1.0).unwrap();
+        let z = SingleDimSpec::new(n, 0.0, 1.0).unwrap();
+        let spec = ThreeDWorldSpec::new(x, y, z).unwrap();
+        ThreeDWorld::new(spec, 1e-9).unwrap()
+    }
+
+    #[test]
+    fn poisson_zero_rho_stays_zero_and_converges() -> anyhow::Result<()> {
+        let mut world = make_world(11);
+
+        // Ensure phi and rho are zero
+        world.phi_mut().set_all(0.0);
+        world.rho_mut().set_all(0.0);
+
+        let iters = world
+            .solve_potential_gs_sor(5000)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        assert!(iters < 5000);
+
+        let tol = 1e-12;
+        let nx = world.world_spec().x_dim().n();
+        let ny = world.world_spec().y_dim().n();
+        let nz = world.world_spec().z_dim().n();
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    assert!(world.phi().get(i, j, k).abs() < tol);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn poisson_manufactured_solution_recovers_phi() -> anyhow::Result<()> {
+        let n = 17; // a bit larger gives cleaner interior
+        let mut world = make_world(n);
+
+        let dx = world.world_spec().x_dim().delta();
+        let dy = world.world_spec().y_dim().delta();
+        let dz = world.world_spec().z_dim().delta();
+        let inv_dx2 = 1.0 / (dx * dx);
+        let inv_dy2 = 1.0 / (dy * dy);
+        let inv_dz2 = 1.0 / (dz * dz);
+
+        // True phi: sin(pi x) sin(pi y) sin(pi z); boundaries are 0 automatically
+        let a = 1.23;
+        let nx = world.world_spec().x_dim().n();
+        let ny = world.world_spec().y_dim().n();
+        let nz = world.world_spec().z_dim().n();
+
+        let x0 = world.world_spec().x_dim().min();
+        let y0 = world.world_spec().y_dim().min();
+        let z0 = world.world_spec().z_dim().min();
+
+        // Fill phi_true into world.phi, but we'll later reset phi to 0 as initial guess.
+        let mut phi_true = ThreeDField::new(nx, ny, nz, 0.0);
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    let x = x0 + (i as f64) * dx;
+                    let y = y0 + (j as f64) * dy;
+                    let z = z0 + (k as f64) * dz;
+                    let val = a
+                        * (std::f64::consts::PI * x).sin()
+                        * (std::f64::consts::PI * y).sin()
+                        * (std::f64::consts::PI * z).sin();
+                    phi_true.set(i, j, k, val);
+                }
+            }
+        }
+
+        // Compute rho on interior from discrete Laplacian that matches your residual
+        world.rho_mut().set_all(0.0);
+        for i in 1..nx - 1 {
+            for j in 1..ny - 1 {
+                for k in 1..nz - 1 {
+                    let phi_c = phi_true.get(i, j, k);
+                    let lap_phi = phi_c * (2.0 * inv_dx2 + 2.0 * inv_dy2 + 2.0 * inv_dz2)
+                        - inv_dx2 * (phi_true.get(i - 1, j, k) + phi_true.get(i + 1, j, k))
+                        - inv_dy2 * (phi_true.get(i, j - 1, k) + phi_true.get(i, j + 1, k))
+                        - inv_dz2 * (phi_true.get(i, j, k - 1) + phi_true.get(i, j, k + 1));
+
+                    let rho = EPS0 * lap_phi;
+                    world.rho_mut().set(i, j, k, rho);
+                }
+            }
+        }
+
+        // Boundary phi is 0. Start from phi=0 everywhere.
+        world.phi_mut().set_all(0.0);
+
+        let iters = world
+            .solve_potential_gs_sor(20000)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        assert!(iters < 20000);
+
+        // Compare interior
+        let tol = 5e-6; // SOR should reach ~1e-6 L2; pointwise may be a bit looser
+        for i in 1..nx - 1 {
+            for j in 1..ny - 1 {
+                for k in 1..nz - 1 {
+                    let got = world.phi().get(i, j, k);
+                    let exp = phi_true.get(i, j, k);
+                    assert!(
+                        (got - exp).abs() < tol,
+                        "mismatch at ({i},{j},{k}): got={got}, exp={exp}"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn poisson_returns_err_when_max_iter_too_small() -> anyhow::Result<()> {
+        let mut world = make_world(11);
+
+        // Put a simple localized charge in the interior
+        world.rho_mut().set_all(0.0);
+        world.phi_mut().set_all(0.0);
+        world.rho_mut().set(5, 5, 5, 1e-6);
+
+        let res = world.solve_potential_gs_sor(1); // intentionally too small
+        assert!(res.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn poisson_does_not_modify_boundary_phi() -> anyhow::Result<()> {
+        let mut world = make_world(11);
+        let nx = world.world_spec().x_dim().n();
+        let ny = world.world_spec().y_dim().n();
+        let nz = world.world_spec().z_dim().n();
+        
+        world.rho_mut().set_all(0.0);
+        world.phi_mut().set_all(0.0);
+        
+        // Mark each face interior with a unique value (avoid overlaps)
+        for i in 1..nx-1 {
+            for j in 1..ny-1 {
+                world.phi_mut().set(i, j, 0,      1.0);
+                world.phi_mut().set(i, j, nz - 1, 2.0);
+            }
+        }
+        for i in 1..nx-1 {
+            for k in 1..nz-1 {
+                world.phi_mut().set(i, 0,      k, 3.0);
+                world.phi_mut().set(i, ny - 1, k, 4.0);
+            }
+        }
+        for j in 1..ny-1 {
+            for k in 1..nz-1 {
+                world.phi_mut().set(0,      j, k, 5.0);
+                world.phi_mut().set(nx - 1, j, k, 6.0);
+            }
+        }
+
+        let _iters = world.solve_potential_gs_sor(5000)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        // Verify face interiors unchanged
+        for i in 1..nx-1 {
+            for j in 1..ny-1 {
+                assert_eq!(world.phi().get(i, j, 0),      1.0);
+                assert_eq!(world.phi().get(i, j, nz - 1), 2.0);
+            }
+        }
+        for i in 1..nx-1 {
+            for k in 1..nz-1 {
+                assert_eq!(world.phi().get(i, 0,      k), 3.0);
+                assert_eq!(world.phi().get(i, ny - 1, k), 4.0);
+            }
+        }
+        for j in 1..ny-1 {
+            for k in 1..nz-1 {
+                assert_eq!(world.phi().get(0,      j, k), 5.0);
+                assert_eq!(world.phi().get(nx - 1, j, k), 6.0);
+            }
+        }
+        
+        Ok(())
+    }
+
 }

@@ -14,6 +14,12 @@ pub struct Particle {
     macroparticle_weight: f64,
 }
 
+impl Particle {
+    pub fn new(pos: DVec3, vel: DVec3, macroparticle_weight: f64) -> Self {
+        Self{pos:pos, vel:vel, macroparticle_weight:macroparticle_weight}
+    }
+}
+
 
 pub struct Species {
     pub name: String,  // Look into OnceCell<String> to enforce types
@@ -41,13 +47,12 @@ pub fn get_species_info_from_species<'a>(sp: &'a Species) -> SpeciesInfo<'a> {
 }
 
 impl Species {
-    pub fn init(name: String, mass: f64, charge: f64,
-                x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec) -> Result<Self> {
-        let num_den = ThreeDField::new(x_dim.n(), y_dim.n(), z_dim.n(), 0.0)?;
+    pub fn new(name: impl Into<String>, mass: f64, charge: f64,
+                x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec) -> Self {
+        let num_den = ThreeDField::new(x_dim.n(), y_dim.n(), z_dim.n(), 0.0);
         let p = Vec::new();
-        let s = Self{name:name, mass:mass, charge:charge,
-                     number_density:num_den, particles:p };
-        Ok(s)
+        Self{name:name.into(), mass:mass, charge:charge,
+                     number_density:num_den, particles:p }
     }
 
     pub fn get_num_particles(&self) -> usize {
