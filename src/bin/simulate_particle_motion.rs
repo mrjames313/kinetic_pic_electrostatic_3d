@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 use kinetic_pic_electrostatic_3d::constants::*;
-use kinetic_pic_electrostatic_3d::world_3d::{ThreeDWorld, ThreeDWorldSpec, SingleDimSpec};
+use kinetic_pic_electrostatic_3d::world_3d::{ThreeDWorld, ThreeDWorldSpec, SingleDimSpec, SorSolverConfig};
 use kinetic_pic_electrostatic_3d::particles::Species;
 use kinetic_pic_electrostatic_3d::output::{CsvLogger, DiagnosticOutput, WriteVti};
 
@@ -11,24 +11,23 @@ fn main() -> Result <()> {
 
     let dt = 2.0e-10;
     
-    let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-    let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-    let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
-    let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
-    let mut world = ThreeDWorld::new(world_spec, dt)?;
+    let x_dim = SingleDimSpec::new(21, -0.1, 0.1);
+    let y_dim = SingleDimSpec::new(21, -0.1, 0.1);
+    let z_dim = SingleDimSpec::new(21, -0.0, 0.2);
+    let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim);
+    let mut world = ThreeDWorld::new(world_spec, dt);
 
-    x_dim.print();
-    y_dim.print();
-    z_dim.print();
+    println!("X: {}", x_dim);
+    println!("Y: {}", y_dim);
+    println!("Z: {}", z_dim);
 
-    println!("World");
-    world.print()?;
+    println!("World: {}", world);
 
     // don't know if this is necessary before starting sim, but doesn't hurt
-    world.solve_potential_gs_sor(5000).map_err(anyhow::Error::msg)?;
+    world.solve_potential_gs_sor(5000, SorSolverConfig::default()).map_err(anyhow::Error::msg)?;
     world.compute_ef().map_err(anyhow::Error::msg)?;
-    
-    world.print()?;
+
+    println!("World: {}", world);
 
     // now introduce particles to the system
     let mut ions = Species::new("O+".to_string(), 16.0 * AMU, QE, x_dim, y_dim, z_dim);    
@@ -74,7 +73,7 @@ fn main() -> Result <()> {
 
         world.compute_rho(&mut all_species);
     
-        world.solve_potential_gs_sor(5000).map_err(anyhow::Error::msg)?;
+        world.solve_potential_gs_sor(5000, SorSolverConfig::default()).map_err(anyhow::Error::msg)?;
         world.compute_ef().map_err(anyhow::Error::msg)?;
         for s in all_species.iter_mut() {
             s.advance(&world);

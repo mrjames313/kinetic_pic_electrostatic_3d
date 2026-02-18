@@ -1,5 +1,6 @@
 use anyhow::Result;
 use glam::DVec3;  // might consider using ndarray in the future
+use std::fmt;
 use std::path::Path;
 use std::time::Instant;
 use vtkio::model::{Attribute, Attributes, ByteOrder, DataSet, Extent,
@@ -13,7 +14,6 @@ use crate::output::TimeInfo;
 use crate::output::IterInfo;
 
 
-// TODO: refine this, probably have a read-only public interface to all 3 specs
 #[derive(Copy, Clone, Debug)]
 pub struct SingleDimSpec {
     n: usize,
@@ -25,13 +25,13 @@ pub struct SingleDimSpec {
 }
 
 impl SingleDimSpec {
-    pub fn new(n: usize, min: f64, max: f64) -> anyhow::Result<Self> {
+    pub fn new(n: usize, min: f64, max: f64) -> Self {
         assert!(n >= 2, "n must be >= 2");
         assert!(max > min, "max must be > min");
         
-        Ok( Self{n:n, min:min, max:max,
-                 delta:(max - min)/(n-1) as f64,
-                 center:(max + min) / 2.0 } )
+        Self{n:n, min:min, max:max,
+             delta:(max - min)/(n-1) as f64,
+             center:(max + min) / 2.0 }
     }
 
     pub fn n(&self) -> usize { self.n }
@@ -40,19 +40,30 @@ impl SingleDimSpec {
     pub fn delta(&self) -> f64 { self.delta }
     pub fn center(&self) -> f64 { self.center }
     
-    pub fn print(&self) {
-        println!("Extent: [{:.4}, {:.4}], {} cells, delta {}, center{}", self.min,
-                 self.max, self.n-1, self.delta, self.center);
+}
+
+impl fmt::Display for SingleDimSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Extent: [{:.4}, {:.4}], {} cells, delta {}, center {}",
+            self.min,
+            self.max,
+            self.n - 1,
+            self.delta,
+            self.center
+        )
     }
 }
+
 
 // Iteration and time are assumed to start at 0 and 0.0
 pub struct TimeRepresentation {
     iteration: usize,
     sim_time: f64,
-    wall_time: f64, // TODO: finish this
+    wall_time: f64,
     wall_timer: Instant,
-    dt: f64, // fixed
+    dt: f64,
 }
 
 impl TimeRepresentation {
@@ -74,6 +85,23 @@ impl TimeRepresentation {
         self.sim_time += self.dt;
     }
 
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SorSolverConfig {
+    pub omega: f64,        // relaxation factor
+    pub l2_conv: f64,      // convergence threshold
+    pub check_every: usize // how often to compute residual
+}
+
+impl Default for SorSolverConfig {
+    fn default() -> Self {
+        Self {
+            omega: 1.4,
+            l2_conv: 1e-6,
+            check_every: 50,
+        }
+    }
 }
 
 pub struct ThreeDWorldSpec {
@@ -98,7 +126,7 @@ impl ThreeDWorldSpec {
 
         #[cfg(feature = "bounds-check")]
         {
-            // heavier: internal consistency & lengths
+            // internal consistency & lengths
             assert_eq!(
                 self.node_volume.len(),
                 self.x_dim.n() * self.y_dim.n() * self.z_dim.n(),
@@ -129,7 +157,7 @@ impl ThreeDWorldSpec {
     }
 
     pub fn new(x_dim: SingleDimSpec, y_dim: SingleDimSpec, z_dim: SingleDimSpec)
-               -> anyhow::Result<Self> {
+               -> Self {
         // Node volumes are reduced along faces, edges, corners
         let vol = x_dim.delta * y_dim.delta * z_dim.delta;
         let mut node_volume = ThreeDField::new(x_dim.n, y_dim.n, z_dim.n, vol);
@@ -149,7 +177,7 @@ impl ThreeDWorldSpec {
         }
         let spec = Self { x_dim, y_dim, z_dim, node_volume };
         spec.check_dims_basic();
-        Ok(spec)
+        spec
     }
 
     pub fn x_dim(&self) -> &SingleDimSpec { &self.x_dim }
@@ -173,26 +201,36 @@ impl ThreeDWorldSpec {
                    self.z_dim.max())
     }
 
-    // TODO: determine if this assert is too expensive, maybe make debug-only? debug_assert!
+    #[inline(always)]
+    fn full_node_index_unchecked(&self, real_coord : DVec3) -> DVec3 {
+        DVec3::new(
+            (real_coord.x - self.x_dim.min()) / self.x_dim.delta(),
+            (real_coord.y - self.y_dim.min()) / self.y_dim.delta(),
+            (real_coord.z - self.z_dim.min()) / self.z_dim.delta(),
+        )
+    }
+
     pub fn get_full_node_index(&self, real_coord : DVec3) -> DVec3 {
         self.check_real_coord_in_bounds(real_coord);
-        
-        let mut index : DVec3 = [0.0, 0.0, 0.0].into();
-        index[0] = (real_coord[0] - self.x_dim.min()) / self.x_dim.delta();
-        index[1] = (real_coord[1] - self.y_dim.min()) / self.y_dim.delta();
-        index[2] = (real_coord[2] - self.z_dim.min()) / self.z_dim.delta();
-        index
+        self.full_node_index_unchecked(real_coord)
     }
 
     pub fn get_full_node_index_no_assert(&self, real_coord : DVec3) -> DVec3 {
-        let mut index : DVec3 = [0.0, 0.0, 0.0].into();
-                index[0] = (real_coord[0] - self.x_dim.min()) / self.x_dim.delta();
-        index[1] = (real_coord[1] - self.y_dim.min()) / self.y_dim.delta();
-        index[2] = (real_coord[2] - self.z_dim.min()) / self.z_dim.delta();
-        index
+        self.full_node_index_unchecked(real_coord)
     }
 
 }
+
+impl std::fmt::Display for ThreeDWorldSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Three dimensional world mesh with dimensions:")?;
+        writeln!(f, "X: {}", self.x_dim)?;
+        writeln!(f, "Y: {}", self.y_dim)?;
+        writeln!(f, "Z: {}", self.z_dim)?;
+        Ok(())
+    }
+}
+
 
 pub struct ThreeDWorld {
     world_spec: ThreeDWorldSpec,
@@ -264,7 +302,7 @@ impl ThreeDWorld {
     }
 
 
-    pub fn new(world_spec: ThreeDWorldSpec, dt: f64) -> anyhow::Result<Self> {
+    pub fn new(world_spec: ThreeDWorldSpec, dt: f64) -> Self {
         let nx = world_spec.x_dim().n();
         let ny = world_spec.y_dim().n();
         let nz = world_spec.z_dim().n();
@@ -279,7 +317,7 @@ impl ThreeDWorld {
         };
         world.check_world_shapes();
         world.check_min_dims_for_stencils();
-        Ok(world)
+        world
     }
 
     pub fn world_spec(&self) -> &ThreeDWorldSpec {&self.world_spec }
@@ -311,46 +349,9 @@ impl ThreeDWorld {
             }
         }
         self.rho.set_all(0.0);
-//        // debugging indices
-//        let debug_indices: Vec<[usize; 3]> = [[5,5,5], [5,5,15], [5,15,5], [5,15,15],
-//                                              [15,5,5], [15,5,15], [15,15,5], [15,15,15]].into();
-//        // debug code
-//        // TODO: figure out if we need to put testing around this
-//        for arr in debug_indices.iter() {
-//            println!("At index [{}, {}, {}] have value {}", arr[0], arr[1], arr[2],
-//                     self.rho.get(arr[0], arr[1], arr[2]));
-//        }
         
-        #[cfg(feature = "bounds-check")]
-        {
-            for s in species {
-                assert!(s.charge.is_finite(),
-                        "species {} has non-finite charge",
-                        s.name);
-                assert!(
-                    s.number_density.data().iter().all(|&v| v.is_finite()),
-                    "species {} has non-finite number_density",
-                    s.name
-                );
-            }
-        }
-
         for s in species.iter() {
-//            println!("New species {}, charge {}", s.name, s.charge);
-            
             self.rho.elementwise_inplace_add_scaled(s.charge, &s.number_density);
-//            // debug code
-//            for arr in debug_indices.iter() {
-//                println!("At index [{}, {}, {}] have node volume {}", arr[0], arr[1], arr[2],
-//                         self.node_volume.get(arr[0], arr[1], arr[2]));
-//
-//                println!("At index [{}, {}, {}] have number_density {}", arr[0], arr[1], arr[2],
-//                         s.number_density.get(arr[0], arr[1], arr[2]));
-//
-//                println!("At index [{}, {}, {}] have rho {}", arr[0], arr[1], arr[2],
-//                         self.rho.get(arr[0], arr[1], arr[2]));
-//            }
-
         }
         #[cfg(feature = "bounds-check")]
         {
@@ -370,28 +371,17 @@ impl ThreeDWorld {
         self.ef.linear_interpolate(full_idx)
     }
     
-    pub fn print(&self) -> Result <()> {
-        println!("Three dimensional world mesh with dimensions:");
-        print!("X: ");
-        self.world_spec.x_dim().print();
-        print!("Y: ");
-        self.world_spec.y_dim().print();
-        print!("Z: ");
-        self.world_spec.z_dim().print();
-        Ok(())
-    }
-
-    pub fn solve_potential_gs_sor(&mut self, max_iter : usize) -> Result<usize, String> {
+    pub fn solve_potential_gs_sor(&mut self, max_iter : usize, config: SorSolverConfig) -> Result<usize, String> {
         self.check_world_shapes();
         debug_assert!(max_iter > 0);
         debug_assert!(self.world_spec.x_dim().n() >= 3 &&
                       self.world_spec.y_dim().n() >= 3 &&
                       self.world_spec.z_dim().n() >= 3);
-        
-        // params that control execution
-        let w : f64 = 1.4;
-        let l2_conv : f64 = 1e-6;
 
+        debug_assert!(config.omega > 0.0 && config.omega < 2.0);
+        debug_assert!(config.l2_conv > 0.0);
+        debug_assert!(config.check_every > 0);
+        
         // precompute some commonly used values
         let inv_dx2 : f64 = 1.0 / (self.world_spec.x_dim().delta() * self.world_spec.x_dim().delta());
         let inv_dy2 : f64 = 1.0 / (self.world_spec.y_dim().delta() * self.world_spec.y_dim().delta());
@@ -410,14 +400,14 @@ impl ThreeDWorld {
                                             inv_dy2 * (self.phi.get(i,j-1,k) + self.phi.get(i,j+1,k)) +
                                             inv_dz2 * (self.phi.get(i,j,k-1) + self.phi.get(i,j,k+1)) ) /
                                 (2.0 * inv_dx2 + 2.0 * inv_dy2 + 2.0 * inv_dz2);
-                            let phi_update = (1.0 - w) * self.phi.get(i,j,k) + w * phi_new;
+                            let phi_update = (1.0 - config.omega) * self.phi.get(i,j,k) + config.omega * phi_new;
                             self.phi.set(i,j,k, phi_update);
                         }
                     }
                 }
 
                 // Periodic check for convergence
-                if iter % 50 == 0 {
+                if iter % config.check_every == 0 {
                     let mut sum: f64 = 0.0;
                     for i in 1..self.world_spec.x_dim().n() - 1 {
                         for j in 1..self.world_spec.y_dim().n() - 1 {
@@ -432,7 +422,7 @@ impl ThreeDWorld {
                         }
                     }
                     l2 = (sum / (self.world_spec.x_dim().n() * self.world_spec.y_dim().n() * self.world_spec.z_dim().n()) as f64).sqrt();
-                    if l2 < l2_conv {
+                    if l2 < config.l2_conv {
                         result = Some(iter);
                         break;
                     }
@@ -453,7 +443,7 @@ impl ThreeDWorld {
         self.check_world_shapes();
         self.check_min_dims_for_stencils();
 
-        #[cfg(feature="bounds=check")]
+        #[cfg(feature="bounds-check")]
         {
             assert!(self.phi.data().iter().all(|&v| v.is_finite()), "phi contains NaNs or Infs");
         }
@@ -470,54 +460,51 @@ impl ThreeDWorld {
                     // In each inner loop iteration, set each component of ef, then
                     // at the end, assign it to self.ef[i,j,k]
                     if i == 0 {
-                        ef[0] = - (-3.0 * self.phi.get(i,j,k)
+                        ef.x = - (-3.0 * self.phi.get(i,j,k)
                                    + 4.0 * self.phi.get(i+1, j, k)
                                    - self.phi.get(i+2, j, k))
                             / two_dx;
                     } else if i == self.world_spec.x_dim().n() - 1 {
-                        ef[0] = - (3.0 * self.phi.get(i,j,k)
+                        ef.x = - (3.0 * self.phi.get(i,j,k)
                                    - 4.0 * self.phi.get(i-1, j, k)
                                    + self.phi.get(i-2, j, k))
                             / two_dx;
                     } else {
-                        ef[0] = -(self.phi.get(i+1,j,k) - self.phi.get(i-1,j,k))
+                        ef.x = -(self.phi.get(i+1,j,k) - self.phi.get(i-1,j,k))
                             / two_dx;
                     }
                     
                     if j == 0 {
-                        ef[1] = - (-3.0 * self.phi.get(i,j,k)
+                        ef.y = - (-3.0 * self.phi.get(i,j,k)
                                    + 4.0 * self.phi.get(i, j+1, k)
                                    - self.phi.get(i, j+2, k))
                             / two_dy;
                     } else if j == self.world_spec.y_dim().n() - 1 {
-                        ef[1] = - (3.0 * self.phi.get(i,j,k)
+                        ef.y = - (3.0 * self.phi.get(i,j,k)
                                    - 4.0 * self.phi.get(i, j-1, k)
                                    + self.phi.get(i, j-2, k))
                             / two_dy;
                     } else {
-                        ef[1] = -(self.phi.get(i,j+1,k) - self.phi.get(i,j-1,k))
+                        ef.y = -(self.phi.get(i,j+1,k) - self.phi.get(i,j-1,k))
                             / two_dy;
                     }
 
                     if k == 0 {
-                        ef[2] = - (-3.0 * self.phi.get(i,j,k)
+                        ef.z = - (-3.0 * self.phi.get(i,j,k)
                                    + 4.0 * self.phi.get(i, j, k+1)
                                    - self.phi.get(i, j, k+2))
                             / two_dz;
                     } else if k == self.world_spec.z_dim().n() - 1 {
-                        ef[2] = - (3.0 * self.phi.get(i,j,k)
+                        ef.z = - (3.0 * self.phi.get(i,j,k)
                                    - 4.0 * self.phi.get(i, j, k-1)
                                    + self.phi.get(i, j, k-2))
                             / two_dz;
                     } else {
-                        ef[2] = -(self.phi.get(i,j,k+1) - self.phi.get(i,j,k-1))
+                        ef.z = -(self.phi.get(i,j,k+1) - self.phi.get(i,j,k-1))
                             / two_dz;
                     }
 
                     self.ef.set(i,j,k, ef);
-//                    if i==5 && j==6 {
-//                        println!("Ef at {i}, {j}, {k} is {ef}");
-//                    }
                 }
             }
         }
@@ -611,7 +598,14 @@ impl ThreeDWorld {
         Ok(())
     }
 }
-    
+
+impl std::fmt::Display for ThreeDWorld {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "ThreeDWorld")?;
+        writeln!(f, "grid:\n{}", self.world_spec)
+    }
+}
+
 
 // Probably should set up different numbers of cells, deltas, and initial positions
 // for the world, in both functions below
@@ -622,12 +616,12 @@ mod tests {
 
     #[test]
     fn efield_of_constant_phi_is_zero() -> anyhow::Result<()> {
-        let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-        let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-        let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
-        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
+        let x_dim = SingleDimSpec::new(21, -0.1, 0.1);
+        let y_dim = SingleDimSpec::new(21, -0.1, 0.1);
+        let z_dim = SingleDimSpec::new(21, -0.0, 0.2);
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim);
         let dt: f64 = 2e-10;
-        let mut world = ThreeDWorld::new(world_spec, dt)?;
+        let mut world = ThreeDWorld::new(world_spec, dt);
 
         let const_val: f64 = 13.444;
         
@@ -647,9 +641,9 @@ mod tests {
             for j in 0..world.world_spec().y_dim().n() {
                 for k in 0..world.world_spec().z_dim().n() {
                     let e = world.get_ef(i,j,k);
-                    assert!(e[0].abs() < tol);
-                    assert!(e[1].abs() < tol);
-                    assert!(e[2].abs() < tol);
+                    assert!(e.x.abs() < tol);
+                    assert!(e.y.abs() < tol);
+                    assert!(e.z.abs() < tol);
                 }
             }
         }
@@ -658,12 +652,12 @@ mod tests {
 
     #[test]
     fn efield_of_linear_phi_is_constant() -> anyhow::Result<()> {
-        let x_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-        let y_dim = SingleDimSpec::new(21, -0.1, 0.1)?;
-        let z_dim = SingleDimSpec::new(21, -0.0, 0.2)?;
-        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
+        let x_dim = SingleDimSpec::new(21, -0.1, 0.1);
+        let y_dim = SingleDimSpec::new(21, -0.1, 0.1);
+        let z_dim = SingleDimSpec::new(21, -0.0, 0.2);
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim);
         let dt: f64 = 2e-10;
-        let mut world = ThreeDWorld::new(world_spec, dt)?;
+        let mut world = ThreeDWorld::new(world_spec, dt);
         
         let (x0, y0, z0) = (0.0, 0.0, 0.0);
         let (a, b, c) = (1.7, -0.4, 0.9);
@@ -691,9 +685,9 @@ mod tests {
             for j in 0..world.world_spec().y_dim().n() {
                 for k in 0..world.world_spec().z_dim().n() {
                     let e = world.get_ef(i,j,k);
-                    assert!((e[0] + a).abs() < tol, "values {} and {} should only differ in sign", e[0], a );
-                    assert!((e[1] + b).abs() < tol, "values {} and {} should only differ in sign", e[1], b);
-                    assert!((e[2] + c).abs() < tol, "values {} and {} should only differ in sign", e[2], c );
+                    assert!((e.x + a).abs() < tol, "values {} and {} should only differ in sign", e.x, a );
+                    assert!((e.y + b).abs() < tol, "values {} and {} should only differ in sign", e.y, b);
+                    assert!((e.z + c).abs() < tol, "values {} and {} should only differ in sign", e.z, c );
                 }
             }
         }
@@ -702,7 +696,7 @@ mod tests {
 
     #[test]
     fn single_dim_spec_computes_delta_and_center() -> anyhow::Result<()> {
-        let s = SingleDimSpec::new(11, -1.0, 1.0)?;
+        let s = SingleDimSpec::new(11, -1.0, 1.0);
         assert_eq!(s.n(), 11);
         assert!((s.delta() - 0.2).abs() < 1e-12);
         assert!((s.center() - 0.0).abs() < 1e-12);
@@ -711,10 +705,10 @@ mod tests {
 
     #[test]
     fn world_spec_node_volume_scales_on_boundaries() -> anyhow::Result<()> {
-        let x = SingleDimSpec::new(4, 0.0, 3.0)?;
-        let y = SingleDimSpec::new(4, 0.0, 3.0)?;
-        let z = SingleDimSpec::new(4, 0.0, 3.0)?;
-        let ws = ThreeDWorldSpec::new(x, y, z)?;
+        let x = SingleDimSpec::new(4, 0.0, 3.0);
+        let y = SingleDimSpec::new(4, 0.0, 3.0);
+        let z = SingleDimSpec::new(4, 0.0, 3.0);
+        let ws = ThreeDWorldSpec::new(x, y, z);
 
         let vol = x.delta() * y.delta() * z.delta();
         let nv = ws.node_volume();
@@ -736,10 +730,10 @@ mod tests {
 
     #[test]
     fn full_node_index_maps_corners() -> anyhow::Result<()> {
-        let x = SingleDimSpec::new(11, -1.0, 1.0)?;
-        let y = SingleDimSpec::new(11, -2.0, 2.0)?;
-        let z = SingleDimSpec::new(11,  0.0, 1.0)?;
-        let ws = ThreeDWorldSpec::new(x, y, z)?;
+        let x = SingleDimSpec::new(11, -1.0, 1.0);
+        let y = SingleDimSpec::new(11, -2.0, 2.0);
+        let z = SingleDimSpec::new(11,  0.0, 1.0);
+        let ws = ThreeDWorldSpec::new(x, y, z);
 
         let min = ws.get_min_corner();
         let max = ws.get_max_corner();
@@ -760,24 +754,24 @@ mod tests {
     #[test]
     #[should_panic]
     fn full_node_index_panics_out_of_bounds() {
-        let x = SingleDimSpec::new(11, 0.0, 1.0).unwrap();
-        let y = SingleDimSpec::new(11, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(11, 0.0, 1.0).unwrap();
-        let ws = ThreeDWorldSpec::new(x, y, z).unwrap();
+        let x = SingleDimSpec::new(11, 0.0, 1.0);
+        let y = SingleDimSpec::new(11, 0.0, 1.0);
+        let z = SingleDimSpec::new(11, 0.0, 1.0);
+        let ws = ThreeDWorldSpec::new(x, y, z);
 
         let _ = ws.get_full_node_index(DVec3::new(-0.1, 0.5, 0.5));
     }
 
     #[test]
     fn gs_sor_converges_for_zero_rho() -> anyhow::Result<()> {
-        let x_dim = SingleDimSpec::new(11, -0.1, 0.1)?;
-        let y_dim = SingleDimSpec::new(11, -0.1, 0.1)?;
-        let z_dim = SingleDimSpec::new(11, -0.1, 0.1)?;
-        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
-        let mut world = ThreeDWorld::new(world_spec, 1e-9)?;
+        let x_dim = SingleDimSpec::new(11, -0.1, 0.1);
+        let y_dim = SingleDimSpec::new(11, -0.1, 0.1);
+        let z_dim = SingleDimSpec::new(11, -0.1, 0.1);
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim);
+        let mut world = ThreeDWorld::new(world_spec, 1e-9);
 
         // rho already zero; phi already zero
-        let iters = world.solve_potential_gs_sor(2000)
+        let iters = world.solve_potential_gs_sor(2000, SorSolverConfig::default())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         // It might converge at iter=0 or very quickly; just assert it did converge.
         assert!(iters < 2000);
@@ -797,11 +791,11 @@ mod tests {
 
     #[test]
     fn potential_energy_zero_for_zero_field() -> anyhow::Result<()> {
-        let x_dim = SingleDimSpec::new(7, 0.0, 1.0)?;
-        let y_dim = SingleDimSpec::new(7, 0.0, 1.0)?;
-        let z_dim = SingleDimSpec::new(7, 0.0, 1.0)?;
-        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim)?;
-        let mut world = ThreeDWorld::new(world_spec, 1e-9)?;
+        let x_dim = SingleDimSpec::new(7, 0.0, 1.0);
+        let y_dim = SingleDimSpec::new(7, 0.0, 1.0);
+        let z_dim = SingleDimSpec::new(7, 0.0, 1.0);
+        let world_spec = ThreeDWorldSpec::new(x_dim, y_dim, z_dim);
+        let mut world = ThreeDWorld::new(world_spec, 1e-9);
         
         // ef initialized to zero
         let pe = world.compute_potential_energy();
@@ -817,11 +811,11 @@ mod rho_tests {
     use crate::particles::{Species, Particle};
 
     fn make_world(nx: usize, ny: usize, nz: usize) -> ThreeDWorld {
-        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
-        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
-        let spec = ThreeDWorldSpec::new(x, y, z).unwrap();
-        ThreeDWorld::new(spec, 1e-9).unwrap()
+        let x = SingleDimSpec::new(nx, 0.0, 1.0);
+        let y = SingleDimSpec::new(ny, 0.0, 1.0);
+        let z = SingleDimSpec::new(nz, 0.0, 1.0);
+        let spec = ThreeDWorldSpec::new(x, y, z);
+        ThreeDWorld::new(spec, 1e-9)
     }
 
     #[test]
@@ -844,9 +838,9 @@ mod rho_tests {
         let (nx, ny, nz) = (5, 4, 3);
         let mut world = make_world(nx, ny, nz);
 
-        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
-        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let x = SingleDimSpec::new(nx, 0.0, 1.0);
+        let y = SingleDimSpec::new(ny, 0.0, 1.0);
+        let z = SingleDimSpec::new(nz, 0.0, 1.0);
         let mut s = Species::new("ions", 2.0, 2.0, x, y, z);
 
         // Make density vary so we’re not just testing a constant field
@@ -878,9 +872,9 @@ mod rho_tests {
         let (nx, ny, nz) = (5, 4, 3);
         let mut world = make_world(nx, ny, nz);
 
-        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap(); // These will copy into below
-        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let x = SingleDimSpec::new(nx, 0.0, 1.0); // These will copy into below
+        let y = SingleDimSpec::new(ny, 0.0, 1.0);
+        let z = SingleDimSpec::new(nz, 0.0, 1.0);
         let mut ions = Species::new("ions", 1.0, 1.0, x, y, z);
         let mut elec = Species::new("electrons", 0.1, -1.0, x, y, z);
 
@@ -918,9 +912,9 @@ mod rho_tests {
 
         let (nx, ny, nz) = (6, 4, 3);
 
-        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
-        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let x = SingleDimSpec::new(nx, 0.0, 1.0);
+        let y = SingleDimSpec::new(ny, 0.0, 1.0);
+        let z = SingleDimSpec::new(nz, 0.0, 1.0);
 
         // Deliberately wrong dimensions
         let bad = Species::new("bad", 1.0, 1.0, x, y, z);
@@ -936,9 +930,9 @@ mod rho_tests {
         // poison rho with junk
         world.rho_mut().set_all(123.0);
         
-        let x = SingleDimSpec::new(nx, 0.0, 1.0).unwrap();
-        let y = SingleDimSpec::new(ny, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(nz, 0.0, 1.0).unwrap();
+        let x = SingleDimSpec::new(nx, 0.0, 1.0);
+        let y = SingleDimSpec::new(ny, 0.0, 1.0);
+        let z = SingleDimSpec::new(nz, 0.0, 1.0);
         let mut s = Species::new("ions", 1.0, 2.0, x, y, z);
         
         for i in 0..nx {
@@ -968,11 +962,11 @@ mod poisson_tests {
     use glam::DVec3;
 
     fn make_world(n: usize) -> ThreeDWorld {
-        let x = SingleDimSpec::new(n, 0.0, 1.0).unwrap();
-        let y = SingleDimSpec::new(n, 0.0, 1.0).unwrap();
-        let z = SingleDimSpec::new(n, 0.0, 1.0).unwrap();
-        let spec = ThreeDWorldSpec::new(x, y, z).unwrap();
-        ThreeDWorld::new(spec, 1e-9).unwrap()
+        let x = SingleDimSpec::new(n, 0.0, 1.0);
+        let y = SingleDimSpec::new(n, 0.0, 1.0);
+        let z = SingleDimSpec::new(n, 0.0, 1.0);
+        let spec = ThreeDWorldSpec::new(x, y, z);
+        ThreeDWorld::new(spec, 1e-9)
     }
 
     #[test]
@@ -984,7 +978,7 @@ mod poisson_tests {
         world.rho_mut().set_all(0.0);
 
         let iters = world
-            .solve_potential_gs_sor(5000)
+            .solve_potential_gs_sor(5000, SorSolverConfig::default())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         assert!(iters < 5000);
 
@@ -1062,7 +1056,7 @@ mod poisson_tests {
         world.phi_mut().set_all(0.0);
 
         let iters = world
-            .solve_potential_gs_sor(20000)
+            .solve_potential_gs_sor(20000, SorSolverConfig::default())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         assert!(iters < 20000);
 
@@ -1093,7 +1087,7 @@ mod poisson_tests {
         world.phi_mut().set_all(0.0);
         world.rho_mut().set(5, 5, 5, 1e-6);
 
-        let res = world.solve_potential_gs_sor(1); // intentionally too small
+        let res = world.solve_potential_gs_sor(1, SorSolverConfig::default()); // intentionally too small
         assert!(res.is_err());
 
         Ok(())
@@ -1129,7 +1123,7 @@ mod poisson_tests {
             }
         }
 
-        let _iters = world.solve_potential_gs_sor(5000)
+        let _iters = world.solve_potential_gs_sor(5000, SorSolverConfig::default())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         // Verify face interiors unchanged
