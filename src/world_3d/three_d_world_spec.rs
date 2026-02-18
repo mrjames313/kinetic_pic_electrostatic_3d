@@ -350,7 +350,7 @@ impl ThreeDWorld {
         }
         self.rho.set_all(0.0);
         
-        for s in species.iter() {
+        for s in species {
             self.rho.elementwise_inplace_add_scaled(s.charge, &s.number_density);
         }
         #[cfg(feature = "bounds-check")]
@@ -371,7 +371,7 @@ impl ThreeDWorld {
         self.ef.linear_interpolate(full_idx)
     }
     
-    pub fn solve_potential_gs_sor(&mut self, max_iter : usize, config: SorSolverConfig) -> Result<usize, String> {
+    pub fn solve_potential_gs_sor(&mut self, max_iter : usize, config: SorSolverConfig) -> anyhow::Result<usize> {
         self.check_world_shapes();
         debug_assert!(max_iter > 0);
         debug_assert!(self.world_spec.x_dim().n() >= 3 &&
@@ -388,13 +388,18 @@ impl ThreeDWorld {
         let inv_dz2 : f64 = 1.0 / (self.world_spec.z_dim().delta() * self.world_spec.z_dim().delta());
 
         let mut l2 : f64 = 1e12;
+
+        let nx = self.world_spec.x_dim().n();
+        let ny = self.world_spec.y_dim().n();
+        let nz = self.world_spec.z_dim().n();
+
         let found = {
             let mut result = None;
 
             for iter in 0..max_iter {
-                for i in 1..self.world_spec.x_dim().n() - 1 {
-                    for j in 1..self.world_spec.y_dim().n() - 1 {
-                        for k in 1..self.world_spec.z_dim().n() - 1 {
+                for i in 1..nx - 1 {
+                    for j in 1..ny - 1 {
+                        for k in 1..nz - 1 {
                             let phi_new = ( self.rho.get(i,j,k) / EPS0 +
                                             inv_dx2 * (self.phi.get(i-1,j,k) + self.phi.get(i+1,j,k)) +
                                             inv_dy2 * (self.phi.get(i,j-1,k) + self.phi.get(i,j+1,k)) +
@@ -409,9 +414,9 @@ impl ThreeDWorld {
                 // Periodic check for convergence
                 if iter % config.check_every == 0 {
                     let mut sum: f64 = 0.0;
-                    for i in 1..self.world_spec.x_dim().n() - 1 {
-                        for j in 1..self.world_spec.y_dim().n() - 1 {
-                            for k in 1..self.world_spec.z_dim().n() - 1 {
+                    for i in 1..nx - 1 {
+                        for j in 1..ny - 1 {
+                            for k in 1..nz - 1 {
                                 let r = self.rho.get(i,j,k) / EPS0 -
                                     self.phi.get(i,j,k) * (2.0 * inv_dx2 + 2.0 * inv_dy2 + 2.0 * inv_dz2) +
                                     inv_dx2 * (self.phi.get(i-1,j,k) + self.phi.get(i+1,j,k)) +
@@ -434,12 +439,12 @@ impl ThreeDWorld {
         match found {
             Some(i) => { Ok(i) }
             None => {
-                Err(format!("GS SOR didn't converge.  L2 residual {l2:.6}"))
+                Err(anyhow::anyhow!("GS SOR didn't converge.  L2 residual {l2:.6}"))
             }
         }
     }
 
-    pub fn compute_ef(&mut self) -> Result<(), String> {
+    pub fn compute_ef(&mut self) -> anyhow::Result<()> {
         self.check_world_shapes();
         self.check_min_dims_for_stencils();
 
@@ -453,10 +458,14 @@ impl ThreeDWorld {
         let two_dz : f64 = 2.0 * self.world_spec.z_dim().delta();
 
         let mut ef: DVec3 = [0.0, 0.0, 0.0].into();
+
+        let nx = self.world_spec.x_dim().n();
+        let ny = self.world_spec.y_dim().n();
+        let nz = self.world_spec.z_dim().n();
         
-        for i in 0..self.world_spec.x_dim().n() {
-            for j in 0..self.world_spec.y_dim().n() {
-                for k in 0..self.world_spec.z_dim().n() {
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
                     // In each inner loop iteration, set each component of ef, then
                     // at the end, assign it to self.ef[i,j,k]
                     if i == 0 {
@@ -464,7 +473,7 @@ impl ThreeDWorld {
                                    + 4.0 * self.phi.get(i+1, j, k)
                                    - self.phi.get(i+2, j, k))
                             / two_dx;
-                    } else if i == self.world_spec.x_dim().n() - 1 {
+                    } else if i == nx - 1 {
                         ef.x = - (3.0 * self.phi.get(i,j,k)
                                    - 4.0 * self.phi.get(i-1, j, k)
                                    + self.phi.get(i-2, j, k))
@@ -479,7 +488,7 @@ impl ThreeDWorld {
                                    + 4.0 * self.phi.get(i, j+1, k)
                                    - self.phi.get(i, j+2, k))
                             / two_dy;
-                    } else if j == self.world_spec.y_dim().n() - 1 {
+                    } else if j == ny - 1 {
                         ef.y = - (3.0 * self.phi.get(i,j,k)
                                    - 4.0 * self.phi.get(i, j-1, k)
                                    + self.phi.get(i, j-2, k))
@@ -494,7 +503,7 @@ impl ThreeDWorld {
                                    + 4.0 * self.phi.get(i, j, k+1)
                                    - self.phi.get(i, j, k+2))
                             / two_dz;
-                    } else if k == self.world_spec.z_dim().n() - 1 {
+                    } else if k == nz - 1 {
                         ef.z = - (3.0 * self.phi.get(i,j,k)
                                    - 4.0 * self.phi.get(i, j, k-1)
                                    + self.phi.get(i, j, k-2))
@@ -632,9 +641,8 @@ mod tests {
                 }
             }
         }
-        if let Err(e) = world.compute_ef() {
-            return Err(anyhow::anyhow!("EF computation failed with error {}", e))
-        }
+        world.compute_ef().map_err(|e| anyhow::anyhow!(
+            "EF computation failed with error {}", e))?;
 
         let tol = 1e-12;
         for i in 0..world.world_spec().x_dim().n() {
@@ -676,10 +684,9 @@ mod tests {
                 }
             }
         }
-        if let Err(e) = world.compute_ef() {
-            return Err(anyhow::anyhow!("EF computation failed with error {}", e))
-        }
-        
+        world.compute_ef().map_err(|e| anyhow::anyhow!(
+            "EF computation failed with error {}", e))?;
+
         let tol = 1e-8;
         for i in 0..world.world_spec().x_dim().n() {
             for j in 0..world.world_spec().y_dim().n() {
@@ -822,7 +829,7 @@ mod rho_tests {
     fn compute_rho_empty_species_is_zero() {
         let mut world = make_world(5, 4, 3);
 
-        world.compute_rho(&Vec::new());
+        world.compute_rho(&[]);
 
         for i in 0..world.world_spec().x_dim().n() {
             for j in 0..world.world_spec().y_dim().n() {
